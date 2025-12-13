@@ -15,10 +15,16 @@ jobs:
       REPO_URL: github.com/badboy518714/migu_video.git
     steps:
       - name: 克隆仓库（PAT 鉴权）
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 拉取完整历史，避免推送冲突
-          token: ${{ env.MIGU_TOKEN }}  # 克隆时就用 PAT，避开默认 bot 身份
+        run: |
+          # 配置 Git 禁用终端交互，强制使用 URL 中的 PAT 鉴权
+          git config --global credential.helper store
+          git config --global core.askpass ""
+          # 手动克隆（临时硬编码 PAT 调试，验证后换回 Secret）
+          # 替换为你的真实 PAT
+          git clone https://badboy518714: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@github.com/badboy518714/migu_video.git .
+          # 拉取完整历史，切换到 main 分支
+          git fetch --all
+          git checkout main
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
