@@ -1,0 +1,76 @@
+name: update
+on:
+  workflow_dispatch:
+  # push:
+  schedule:
+    - cron: 0 */3 * * *
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      # 建议将 PAT 存为仓库 Secret（名称：MIGU_TOKEN），避免硬编码
+      MIGU_TOKEN: ${{ secrets.MIGU_TOKEN }}
+      USER_NAME: badboy518714
+      USER_EMAIL: 474628725@qq.com
+      REPO_URL: github.com/badboy518714/migu_video.git
+    steps:
+      - name: 克隆仓库（PAT 鉴权）
+        run: |
+          # 配置 Git 禁用终端交互，强制使用 URL 中的 PAT 鉴权
+          git config --global credential.helper store
+          git config --global core.askpass ""
+          # 手动克隆（临时硬编码 PAT 调试，验证后换回 Secret）
+          # 替换为你的真实 PAT
+          git clone https://${{ env.USER_NAME }}:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} .
+          # 拉取完整历史，切换到 main 分支
+          git fetch --all
+          git checkout main
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20  # 指定 Node.js 版本
+      - name: 设置时区
+        run: sudo timedatectl set-timezone 'Asia/Shanghai'
+      - name: 安装依赖（如有）
+        run: npm install
+
+      - name: 运行 JS 脚本
+        run: node updateData.js
+        
+      - name: 检测文件是否更新
+        id: check_updates
+        run: | 
+          CHANGES=0
+          UPDATED_FILES=$(git status --porcelain)
+          if [ -n "$UPDATED_FILES" ]; then
+            echo "UPDATED_FILES: $UPDATED_FILES"
+            CHANGES=1
+          else
+            echo "No updated files. Skipping git add."          
+          fi
+          echo "CHANGES=$CHANGES" >> $GITHUB_ENV
+      - name: 提交更改
+        if: ${{ env.CHANGES != 0 }}
+        run: |    
+          echo "CHANGES: ${{ env.CHANGES }}"
+          # 步骤1：暂存本地未提交的更改（关键！解决 unstaged changes 错误）
+          git stash push -u -m "temp stash for pull rebase"
+          
+          # 步骤2：拉取最新代码（补全完整 URL，用 PAT 鉴权）
+          git pull https://${{ env.USER_NAME }}:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} main --rebase
+          
+          # 步骤3：恢复暂存的更改（保留本地修改）
+          git stash pop || echo "No stash to pop (safe to ignore)"
+          
+          # 步骤4：配置 Git 身份 + 提交更改
+          git config --local user.email "${{ env.USER_EMAIL }}"
+          git config --local user.name "${{ env.USER_NAME }}"
+          git add .
+          git commit -m "由github actions推送更新,日期:`date`"
+
+      # 步骤4：推送更改（仅当有更改时执行）
+      - name: 推送更改
+        if: ${{ env.CHANGES != 0 }}
+        run: |
+          # HTTPS 方式（直接指定 URL 推送）
+          git push -u https://${{ env.USER_NAME }}:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} main 
