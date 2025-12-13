@@ -45,8 +45,7 @@ jobs:
            git commit -m "由github actions推送更新,日期:`date`"
       - name: 推送更改
         if: ${{ env.CHANGES!= 0 }}
-        run: |
-           # 替换远程仓库地址，嵌入PAT完成鉴权
-           git remote set-url origin https://badboy518714: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@github.com/badboy518714/migu_video.git
-           # 推送（--force 可选，测试阶段用，稳定后可去掉）
-           git push origin main --force
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ secrets.MIGU_TOKEN }}
+          branch: main
