@@ -58,7 +58,7 @@ async function getAndroidURL(userId, token, pid, rateType) {
     headers.UserId = userId
     headers.UserToken = token
   }
-  console.log(headers)
+  // console.log(headers)
   const str = timestramp + pid + appVersion
   const md5 = getStringMD5(str)
   const result = getSaltAndSign(md5)
@@ -124,8 +124,8 @@ async function getAndroidURL720p(pid) {
     TerminalId: "android",
     "X-UP-CLIENT-CHANNEL-ID": `${appVersionID}`
   }
-   console.log(pid)
-  console.log(headers)
+  //  console.log(pid)
+  // console.log(headers)
   const str = timestramp + pid + appVersion.substring(0, 8)
   const md5 = getStringMD5(str)
 
@@ -142,12 +142,12 @@ async function getAndroidURL720p(pid) {
   const baseURL = "https://play.miguvideo.com/playurl/v1/play/playurl"
   const params = "?sign=" + sign + "&rateType=" + rateType
     + "&contId=" + pid + "&timestamp=" + timestramp + "&salt=" + salt
-  console.log(baseURL + params)
+  // console.log(baseURL + params)
   // const respData = await fetch(baseURL + params, {
   //   headers: headers
   // }).then(r => r.json())
   const respData = await fetchMiguVideo(baseURL + params);
-  console.dir(respData, { depth: null })
+  // console.dir(respData, { depth: null })
   const url = respData.body.urlInfo?.url
   // console.log(rateType)
   // console.log(url)
