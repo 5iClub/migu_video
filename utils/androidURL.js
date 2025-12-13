@@ -150,7 +150,7 @@ async function getAndroidURL720p(pid) {
   // console.log(url)
   if (!url) {
     return {
-      url: "",
+      url: "123",
       rateType: 0,
       content: respData
     }
