@@ -29,13 +29,13 @@ async function fetchURLByAndroid720p() {
   appendFile(path, `#EXTM3U x-tvg-url="https://cdn.jsdelivr.net/gh/develop202/migu_video/playback.xml,https://ghfast.top/raw.githubusercontent.com/develop202/migu_video/refs/heads/main/playback.xml,https://hk.gh-proxy.org/raw.githubusercontent.com/develop202/migu_video/refs/heads/main/playback.xml,https://develop202.github.io/migu_video/playback.xml,https://raw.githubusercontents.com/develop202/migu_video/refs/heads/main/playback.xml" catchup="append" catchup-source="&playbackbegin=\${(b)yyyyMMddHHmmss}&playbackend=\${(e)yyyyMMddHHmmss}"\n`)
 
   // 分类列表
-  for (let i = 0; i < datas.length-datas.length+1; i++) {
+  for (let i = 0; i < datas.length; i++) {
 
     const data = datas[i].dataList
 
     printBlue(`开始更新分类###: ${datas[i].name}`)
     // 写入节目
-    for (let j = 0; j < data.length-data.length+1; j++) {
+    for (let j = 0; j < data.length; j++) {
 
       await updatePlaybackData(data[j], playbackFile)
 
