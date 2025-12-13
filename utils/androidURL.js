@@ -1,6 +1,7 @@
 import { getStringMD5 } from "./EncryUtils.js";
 import { getddCalcuURL, getddCalcuURL720p } from "./ddCalcuURL.js";
 import { printYellow } from "./colorOut.js";
+import { fetchMiguVideo } from "./new_fetch.js";
 
 /**
  * @typedef {object} SaltSign
@@ -142,25 +143,11 @@ async function getAndroidURL720p(pid) {
   const params = "?sign=" + sign + "&rateType=" + rateType
     + "&contId=" + pid + "&timestamp=" + timestramp + "&salt=" + salt
   console.log(baseURL + params)
-  const respData = await fetch(baseURL + params, {
-    headers: headers
-  }).then(r => r.json())
-  const ssss = await fetch("https://play.miguvideo.com/playurl/v1/play/playurl?sign=ba3fed4cd92710cc51cc58f3b89d4689&rateType=3&contId=608807420&timestamp=1765629576272&salt=75482825", {
-    headers: {
-   "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17.0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.45(0x18002d29) NetType/WIFI Language/zh_CN",
-    "Accept-Language": "zh-CN,zh;q=0.9",  
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-    "Referer": "https://www.miguvideo.com/", 
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1", 
-    "X-Requested-With": "com.tencent.mm",  
-  "AppVersion": '2600034600',
-  "TerminalId": 'android',
-  'X-UP-CLIENT-CHANNEL-ID': '2600034600-99000-201600010010028'
-}
-  }).then(r => r.json())
-  console.dir(ssss, { depth: null })
+  // const respData = await fetch(baseURL + params, {
+  //   headers: headers
+  // }).then(r => r.json())
+  const respData = await fetchMiguVideo(baseURL + params);
+  console.dir(respData, { depth: null })
   const url = respData.body.urlInfo?.url
   // console.log(rateType)
   // console.log(url)
