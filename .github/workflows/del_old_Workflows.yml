@@ -1,0 +1,32 @@
+name: 删除 Old Workflows
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      root_sol:
+        description: "Workflow Title"
+        required: true
+        default: "Delete old workflow runs"
+
+jobs:
+  del_runs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Nightly Build
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.MIGU_TOKEN }}
+          repository: ${{ github.repository }}
+          # retain_days: 7
+          # keep_minimum_runs: 6
+          retain_days: 1
+          keep_minimum_runs: 6
+          delete_workflow_pattern: 'Nightly Build'
+      - name: Delete Self
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 1
+          keep_minimum_runs: 1
