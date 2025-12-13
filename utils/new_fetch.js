@@ -44,6 +44,7 @@ async function fetchMiguVideo(url){
     // console.log("请求结果：", res); // 最终拿到数据
     return JSON.parse(res);
   } catch (error) {
+    console.log("请求结果：失败", url);
     console.error("请求失败：", error); // 捕获网络/解析错误
   }
 
