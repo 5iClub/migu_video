@@ -390,13 +390,13 @@ def getddCalcu720p(url, pID):
 def append_All_Live(live, flag, data):
     try:
         respData = get_content(data["pID"])
-        print(respData)
+        # print(respData)
         playurl = getddCalcu720p(respData["body"]["urlInfo"]["url"], data["pID"])
-        print(playurl)
+        # print(playurl)
 
         if playurl != "":
             z = 1
-            while z <= 1:
+            while z <= 6:
                 obj = requests.get(playurl, allow_redirects=False)
                 location = obj.headers["Location"]
                 if location == "" or location is None:
@@ -408,8 +408,11 @@ def append_All_Live(live, flag, data):
                     time.sleep(0.15)
                 z += 1
         content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{data["pics"]["highResolutionH"]}" group-title="{live}",{data["name"]}\n{playurl}\n'
-        All_Live[flag] = content
-        print(f'频道 [{data["name"]}] 更新成功！')
+        if z == 7:
+            print(f'频道 [{data["name"]}] 更新失败！')
+        else:
+            All_Live[flag] = content
+            print(f'频道 [{data["name"]}] 更新成功！')
     except Exception as e:
         print(f'频道 [{data["name"]}] 更新失败！')
         print(f"ERROR:{e}")
@@ -424,7 +427,6 @@ def update(live, url):
     for flag, data in enumerate(dataList):
         All_Live.append("")
         pool.submit(append_All_Live, live, FLAG + flag, data)
-        break
     pool.shutdown()  # 结束线程
     FLAG += len(dataList)
 
@@ -438,7 +440,7 @@ def main():
         print(f"分类 ----- [{live}] ----- 开始更新. . .")
         url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{LIVE[live]}'
         update(live, url)
-        break
+
     for content in All_Live:
         appendfile(path, content)
 
