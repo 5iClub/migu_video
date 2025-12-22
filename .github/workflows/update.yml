@@ -11,8 +11,8 @@ jobs:
       # 建议将 PAT 存为仓库 Secret（名称：MIGU_TOKEN），避免硬编码
       MIGU_TOKEN: ${{ secrets.MIGU_TOKEN }}
       USER_NAME: badboy518714
-      USER_EMAIL: 474628725@qq.com
-      REPO_URL: github.com/badboy518714/migu_video.git
+      USER_EMAIL: gougoo2010@gmail.com
+      REPO_URL: github.com/5iClub/migu_video.git
     steps:
       - name: 克隆仓库（PAT 鉴权）
         run: |
