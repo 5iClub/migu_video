@@ -1,84 +1,90 @@
 name: update咪咕
+
 on:
   workflow_dispatch:
-  # push:
   schedule:
-    - cron: 0 */3 * * *
+    - cron: "0 */3 * * *"
+
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      # 建议将 PAT 存为仓库 Secret（名称：MIGU_TOKEN），避免硬编码
-      MIGU_TOKEN: ${{ secrets.MIGU_TOKEN }}
       USER_NAME: badboy518714
       USER_EMAIL: gougoo2010@gmail.com
       REPO_URL: github.com/5iClub/migu_video.git
+    
     steps:
-      - name: 克隆仓库（PAT 鉴权）
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+          fetch-depth: 0  # 获取完整历史记录
+      
+      - name: 配置 Git 身份
         run: |
-          # 配置 Git 禁用终端交互，强制使用 URL 中的 PAT 鉴权
-          git config --global credential.helper store
-          git config --global core.askpass ""
-          # 手动克隆（临时硬编码 PAT 调试，验证后换回 Secret）
-          # 替换为你的真实 PAT
-          git clone https://${{ env.USER_NAME }}:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} .
-          # 拉取完整历史，切换到 main 分支
-          git fetch --all
-          git checkout main
-      - name: 安装Python
-        uses: actions/setup-python@v2
+          git config --local user.email "${{ env.USER_EMAIL }}"
+          git config --local user.name "${{ env.USER_NAME }}"
+      
+      - name: 安装 Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.8'
-      - name: 加载缓存  
+      
+      - name: 加载缓存
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/run_in_Actions/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
+      
       - name: 设置时区
         run: sudo timedatectl set-timezone 'Asia/Shanghai'
+      
       - name: 安装依赖
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+      
       - name: 执行任务
         run: |
           python MIGU.py
-        
+      
       - name: 检测文件是否更新
-        id: check_updates
-        run: | 
-          CHANGES=0
-          UPDATED_FILES=$(git status --porcelain)
-          if [ -n "$UPDATED_FILES" ]; then
-            echo "UPDATED_FILES: $UPDATED_FILES"
-            CHANGES=1
-          else
-            echo "No updated files. Skipping git add."          
-          fi
-          echo "CHANGES=$CHANGES" >> $GITHUB_ENV
-      - name: 提交更改
-        if: ${{ env.CHANGES != 0 }}
-        run: |    
-          echo "CHANGES: ${{ env.CHANGES }}"
-          # 步骤1：暂存本地未提交的更改（关键！解决 unstaged changes 错误）
-          git stash push -u -m "temp stash for pull rebase"
-          
-          # 步骤2：拉取最新代码（补全完整 URL，用 PAT 鉴权）
-          git pull https://${{ env.USER_NAME }}:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} main --rebase
-          
-          # 步骤3：恢复暂存的更改（保留本地修改）
-          git stash pop || echo "No stash to pop (safe to ignore)"
-          
-          # 步骤4：配置 Git 身份 + 提交更改
-          git config --local user.email "${{ env.USER_EMAIL }}"
-          git config --local user.name "${{ env.USER_NAME }}"
-          git add .
-          git commit -m "由github actions推送更新,日期:`date`"
-
-      # 步骤4：推送更改（仅当有更改时执行）
-      - name: 推送更改
-        if: ${{ env.CHANGES != 0 }}
+        id: check-updates
         run: |
-          # HTTPS 方式（直接指定 URL 推送）
-          git push -u https://${{ env.USER_NAME }}:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} main 
+          # 检查是否有文件更改
+          if git diff --quiet HEAD; then
+            echo "CHANGES=0" >> $GITHUB_ENV
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "没有检测到文件更改"
+          else
+            echo "CHANGES=1" >> $GITHUB_ENV
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "检测到文件已更改"
+            git status --porcelain
+          fi
+      
+      - name: 提交更改
+        if: ${{ env.CHANGES == '1' }}
+        run: |
+          echo "正在提交更改..."
+          # 添加所有更改的文件
+          git add -A
+          
+          # 提交更改
+          commit_msg="由 Github Actions 自动更新 - $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "$commit_msg" || echo "没有需要提交的更改(可能已是最新)"
+          
+          # 拉取最新代码并处理可能的冲突
+          git pull origin main --rebase --autostash
+          
+      - name: 推送更改
+        if: ${{ env.CHANGES == '1' }}
+        run: |
+          echo "正在推送更改..."
+          git push origin main
+        env:
+          # 使用 GitHub Token 进行推送
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
