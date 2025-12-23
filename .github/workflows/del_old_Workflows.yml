@@ -1,38 +1,110 @@
 name: 删除 Old Workflows
+
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每天 UTC 0点执行（北京时间8点）
+    # 每天UTC时间0点执行（北京时间早上8点）
+    - cron: '0 0 * * *'
+  
+  # 支持手动触发
   workflow_dispatch:
     inputs:
-      root_sol:
+      workflow_title:
         description: "Workflow Title"
         required: true
         default: "Delete old workflow runs"
+      retain_days:
+        description: "保留天数"
+        required: false
+        default: "1"
+      keep_minimum_runs:
+        description: "最小保留数量"
+        required: false
+        default: "6"
+
+# 环境变量配置
+env:
+  # 使用GitHub生成的令牌，默认有actions:write权限
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # 或者使用自定义的PAT（如果需要更多权限）
+  CUSTOM_TOKEN: ${{ secrets.MIGU_TOKEN }}
 
 jobs:
-  del_runs:
+  clean_workflow_runs:
+    name: 清理工作流运行记录
     runs-on: ubuntu-latest
+    
+    # 必须显式声明删除工作流的权限
     permissions:
-      actions: write  # 显式声明删除工作流的权限（必须）
+      actions: write
+      contents: read
+    
     steps:
       # 步骤1：删除「Nightly Build」工作流的旧记录
-      - name: Delete Nightly Build Workflow Runs
+      - name: 删除 Nightly Build 工作流运行记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
-          token: ${{ secrets.MIGU_TOKEN }}  # 统一使用带权限的 PAT
+          # 使用GitHub自动生成的token（推荐）
+          token: ${{ env.GITHUB_TOKEN }}
+          
+          # 或者使用自定义PAT（如果需要更多权限）
+          # token: ${{ env.CUSTOM_TOKEN }}
+          
+          # 指定仓库
           repository: ${{ github.repository }}
-          retain_days: 1  # 保留1天内的记录
-          keep_minimum_runs: 6  # 至少保留6条（即使超过1天）
-          # delete_workflow_pattern: 'Nightly Build'  # 精准匹配工作流名称
-          # 可选：仅删除成功的运行记录（避免删失败的排查用）
-          # delete_only_successful: true
+          
+          # 保留策略
+          retain_days: ${{ inputs.retain_days || 1 }}
+          
+          # 最小保留数量
+          keep_minimum_runs: ${{ inputs.keep_minimum_runs || 6 }}
+          
+          # 指定要删除的工作流名称（精准匹配）
+          delete_workflow_pattern: 'Nightly Build'
+          
+          # 删除所有状态的运行记录
+          delete_workflow_by_state_pattern: ALL
+          delete_run_by_conclusion_pattern: ALL
+          
+          # 基础URL
+          baseUrl: https://api.github.com
+          
+          # 是否使用每日保留策略
+          use_daily_retention: false
+          
+          # 测试模式设置为false以实际执行删除
+          dry_run: false
+          
+          # 跳过分支和PR检查
+          check_branch_existence: false
+          check_pullrequest_exist: false
 
-      # 步骤2：删除当前「删除 Old Workflows」工作流的旧记录
-      - name: Delete Self Workflow Runs
+      # 步骤2：删除当前工作流自身的旧记录
+      - name: 删除当前工作流运行记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
-          token: ${{ secrets.MIGU_TOKEN }}  # 替换 github.token 为 PAT
+          token: ${{ env.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          retain_days: 1  # 保留1天内的自身运行记录
-          keep_minimum_runs: 1  # 至少保留1条自身记录
-          delete_workflow_pattern: '删除 Old Workflows'  # 匹配当前工作流名称（和 name 字段一致）
+          retain_days: ${{ inputs.retain_days || 1 }}
+          
+          # 当前工作流至少保留1条记录
+          keep_minimum_runs: 1
+          
+          # 匹配当前工作流名称
+          delete_workflow_pattern: '删除 Old Workflows'
+          
+          # 其他配置
+          delete_workflow_by_state_pattern: ALL
+          delete_run_by_conclusion_pattern: ALL
+          baseUrl: https://api.github.com
+          use_daily_retention: false
+          dry_run: false
+          check_branch_existence: false
+          check_pullrequest_exist: false
+
+      # 步骤3：验证删除结果（可选）
+      - name: 验证清理结果
+        run: |
+          echo "✅ 工作流运行记录清理已完成"
+          echo "📅 执行时间: $(date)"
+          echo "🔧 工作流名称: ${{ github.workflow }}"
+          echo "📊 仓库: ${{ github.repository }}"
