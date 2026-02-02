@@ -2,46 +2,22 @@ name: update咪咕
 
 on:
   workflow_dispatch:
-  # push:
   schedule:
     - cron: '0 */2 * * *'
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    env:
-      USER_NAME: 5iClub
-      USER_EMAIL: gougoo2010@gmail.com
-      REPO_URL: github.com/5iClub/migu_video.git
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # 使用GitHub自动提供的token
-          ref: main
-      
-      - name: 设置环境变量（兼容旧配置）
-        run: |
-          if [ -n "${{ secrets.MIGU_TOKEN }}" ]; then
-            echo "MIGU_TOKEN is set, using it"
-            echo "MIGU_TOKEN=${{ secrets.MIGU_TOKEN }}" >> $GITHUB_ENV
-          else
-            echo "MIGU_TOKEN is not set, using GITHUB_TOKEN"
-            echo "MIGU_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
-          fi
+          fetch-depth: 0
       
       - name: 安装Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.8'
-      
-      - name: 加载缓存 
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
       
       - name: 设置时区
         run: sudo timedatectl set-timezone 'Asia/Shanghai'
@@ -54,31 +30,19 @@ jobs:
         run: |
           python MIGU.py
       
-      - name: 检测文件更改
-        id: check-changes
+      - name: 如果有更改则提交
         run: |
-          # 简化检测逻辑
+          # 检查是否有更改
           if git diff --quiet; then
-            echo "changes_detected=false" >> $GITHUB_OUTPUT
-            echo "No changes detected"
-          else
-            echo "changes_detected=true" >> $GITHUB_OUTPUT
-            echo "Changes detected"
-            git status --porcelain
+            echo "No changes to commit"
+            exit 0
           fi
-      
-      - name: 提交并推送更改
-        if: steps.check-changes.outputs.changes_detected == 'true'
-        run: |
-          # 配置Git身份
-          git config --local user.email "${{ env.USER_EMAIL }}"
-          git config --local user.name "${{ env.USER_NAME }}"
           
-          # 添加所有更改的文件
+          # 配置Git
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # 添加、提交并推送
           git add .
-          
-          # 提交更改
-          git commit -m "由github actions推送更新,日期:$(date '+%Y-%m-%d %H:%M:%S')"
-          
-          # 使用配置的token推送更改
-          git push https://x-access-token:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} main
+          git commit -m "自动更新：$(date '+%Y-%m-%d %H:%M:%S')"
+          git push
