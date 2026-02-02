@@ -1,4 +1,4 @@
-name: update咪咕 (简化版)
+name: update咪咕
 
 on:
   workflow_dispatch:
@@ -6,41 +6,43 @@ on:
     - cron: '0 */2 * * *'
 
 jobs:
-  update-migu:
+  run:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: 检出仓库
-      uses: actions/checkout@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: 安装Python和依赖
-      run: |
-        sudo timedatectl set-timezone 'Asia/Shanghai'
-        python -m pip install --upgrade pip
-        pip install requests
-    
-    - name: 执行更新脚本
-      run: python MIGU.py
-    
-    - name: 检查是否更新
-      id: check-updates
-      run: |
-        if git diff --quiet; then
-          echo "changes=false" >> $GITHUB_OUTPUT
-          echo "没有检测到更新"
-        else
-          echo "changes=true" >> $GITHUB_OUTPUT
-          echo "检测到文件更新"
-          git status --porcelain
-        fi
-    
-    - name: 提交更新
-      if: steps.check-updates.outputs.changes == 'true'
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git add .
-        git commit -m "自动更新: $(date '+%Y-%m-%d %H:%M:%S')"
-        git push
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: 安装Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+      
+      - name: 设置时区
+        run: sudo timedatectl set-timezone 'Asia/Shanghai'
+      
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+      
+      - name: 执行MIGU更新脚本
+        run: |
+          python MIGU.py
+      
+      - name: 如果有更改则提交
+        run: |
+          # 检查是否有更改
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          # 配置Git
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # 添加、提交并推送
+          git add .
+          git commit -m "自动更新：$(date '+%Y-%m-%d %H:%M:%S')"
+          git push
