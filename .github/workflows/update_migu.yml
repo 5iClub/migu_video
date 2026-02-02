@@ -10,8 +10,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      # 建议将 PAT 存为仓库 Secret（名称：MIGU_TOKEN），避免硬编码
-      MIGU_TOKEN: ${{ secrets.MIGU_TOKEN }}
       USER_NAME: 5iClub
       USER_EMAIL: gougoo2010@gmail.com
       REPO_URL: github.com/5iClub/migu_video.git
@@ -19,9 +17,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.MIGU_TOKEN }}
-          fetch-depth: 0  # 拉取完整历史
-
+          token: ${{ secrets.GITHUB_TOKEN }}  # 使用GitHub自动提供的token
+          ref: main
+      
+      - name: 设置环境变量（兼容旧配置）
+        run: |
+          if [ -n "${{ secrets.MIGU_TOKEN }}" ]; then
+            echo "MIGU_TOKEN is set, using it"
+            echo "MIGU_TOKEN=${{ secrets.MIGU_TOKEN }}" >> $GITHUB_ENV
+          else
+            echo "MIGU_TOKEN is not set, using GITHUB_TOKEN"
+            echo "MIGU_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+          fi
+      
       - name: 安装Python
         uses: actions/setup-python@v2
         with:
@@ -72,7 +80,5 @@ jobs:
           # 提交更改
           git commit -m "由github actions推送更新,日期:$(date '+%Y-%m-%d %H:%M:%S')"
           
-          # 推送更改
-          git push origin main
-        env:
-          GITHUB_TOKEN: ${{ secrets.MIGU_TOKEN }}
+          # 使用配置的token推送更改
+          git push https://x-access-token:${{ env.MIGU_TOKEN }}@${{ env.REPO_URL }} main
