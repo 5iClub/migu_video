@@ -35,7 +35,7 @@ LIVE = {'热门': 'e7716fea6aa1483c80cfc10b7795fcb8', '体育': '7538163cdac0443
         '新闻': 'c584f67ad63f4bc983c31de3a9be977c', '教育': 'af72267483d94275995a4498b2799ecd',
         '熊猫': 'e76e56e88fff4c11b0168f55e826445d', '综艺': '192a12edfef04b5eb616b878f031f32f',
         '少儿': 'fc2f5b8fd7db43ff88c4243e731ecede', '纪实': 'e1165138bdaa44b9a3138d74af6c6673'}
-path = 'MiGu.m3u'
+path = 'migu.txt'
 appVersion = "2600034600"
 appVersionID = appVersion + "-99000-201600010010028"
 All_Live = []
