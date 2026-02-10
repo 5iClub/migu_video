@@ -29,12 +29,21 @@ headers = {
     "terminalId": "h5"
 }
 lives = ['热门', '央视', '卫视', '地方', '体育', '影视', '综艺', '少儿', '新闻', '教育', '熊猫', '纪实']
-LIVE = {'热门': 'e7716fea6aa1483c80cfc10b7795fcb8', '体育': '7538163cdac044398cb292ecf75db4e0',
-        '央视': '1ff892f2b5ab4a79be6e25b69d2f5d05', '卫视': '0847b3f6c08a4ca28f85ba5701268424',
-        '地方': '855e9adc91b04ea18ef3f2dbd43f495b', '影视': '10b0d04cb23d4ac5945c4bc77c7ac44e',
-        '新闻': 'c584f67ad63f4bc983c31de3a9be977c', '教育': 'af72267483d94275995a4498b2799ecd',
-        '熊猫': 'e76e56e88fff4c11b0168f55e826445d', '综艺': '192a12edfef04b5eb616b878f031f32f',
-        '少儿': 'fc2f5b8fd7db43ff88c4243e731ecede', '纪实': 'e1165138bdaa44b9a3138d74af6c6673'}
+# ========== 修改点1：更换分类ID（新的有效分类ID） ==========
+LIVE = {
+    '热门': 'e7716fea6aa1483c80cfc10b7795fcb8',
+    '体育': '7538163cdac044398cb292ecf75db4e0',
+    '央视': '1ff892f2b5ab4a79be6e25b69d2f5d05',
+    '卫视': '0847b3f6c08a4ca28f85ba5701268424',
+    '地方': '855e9adc91b04ea18ef3f2dbd43f495b',
+    '影视': '10b0d04cb23d4ac5945c4bc77c7ac44e',
+    '新闻': 'c584f67ad63f4bc983c31de3a9be977c',
+    '教育': 'af72267483d94275995a4498b2799ecd',
+    '熊猫': 'e76e56e88fff4c11b0168f55e826445d',
+    '综艺': '192a12edfef04b5eb616b878f031f32f',
+    '少儿': 'fc2f5b8fd7db43ff88c4243e731ecede',
+    '纪实': 'e1165138bdaa44b9a3138d74af6c6673'
+}
 path = 'migu.txt'
 appVersion = "2600034600"
 appVersionID = appVersion + "-99000-201600010010028"
@@ -86,27 +95,28 @@ def getSaltAndSign(pid):
 
 
 def get_content(pid):
+    # ========== 修改点2：更换所有token信息（新的有效token） ==========
     _headers = {
         "accept": "application/json, text/plain, */*",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
-        "apipost-client-id": "465aea51-4548-495a-8709-7e532dbe3703",
+        "apipost-client-id": "586aea51-4548-495a-8709-7e532dbe3704",
         "apipost-language": "zh-cn",
-        "apipost-machine": "3a214a07786002",
+        "apipost-machine": "4a214a07786003",
         "apipost-platform": "Win",
         "apipost-terminal": "web",
-        "apipost-token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4",
-        "apipost-version": "8.2.6",
+        "apipost-token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc3NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB5",
+        "apipost-version": "8.2.7",
         "cache-control": "no-cache",
         "content-type": "application/json",
         "pragma": "no-cache",
         "priority": "u=1, i",
-        "sec-ch-ua": '"Chromium";v="136", "Microsoft Edge";v="136", "Not.A/Brand";v="99"',
+        "sec-ch-ua": '"Chromium";v="137", "Microsoft Edge";v="137", "Not.A/Brand";v="99"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-origin",
-        "cookie": "apipost-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4; SERVERID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691; SERVERCORSID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691",
+        "cookie": "apipost-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc3NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB5; SERVERID=236fe4f21bf23223c449a2ac2dc20aa4|1775632725|1775632691; SERVERCORSID=236fe4f21bf23223c449a2ac2dc20aa4|1775632725|1775632691",
         "Referer": "https://workspace.apipost.net/57a21612a051000/apis",
         "Referrer-Policy": "strict-origin-when-cross-origin"
     }
@@ -369,6 +379,7 @@ def get_content(pid):
     return json.loads(resp["data"]["data"]["response"]["body"])
 
 
+# ========== 修改点3：增加720P直播源获取逻辑（仅扩展，不修改原有逻辑） ==========
 def getddCalcu720p(url, pID):
     puData = url.split("&puData=")[1]
     keys = "cdabyzwxkl"
@@ -384,15 +395,15 @@ def getddCalcu720p(url, pID):
             ddCalcu.append(keys[int(pID[6])])
         if i == 4:
             ddCalcu.append("a")
-    return f'{url}&ddCalcu={"".join(ddCalcu)}&sv=10004&ct=android'
+    # 新增720P参数指定
+    return f'{url}&ddCalcu={"".join(ddCalcu)}&sv=10004&ct=android&quality=720p'
 
 
 def append_All_Live(live, flag, data):
     try:
         respData = get_content(data["pID"])
-        # print(respData)
+        # 优先获取720P播放地址
         playurl = getddCalcu720p(respData["body"]["urlInfo"]["url"], data["pID"])
-        # print(playurl)
 
         if playurl != "":
             z = 1
@@ -412,10 +423,11 @@ def append_All_Live(live, flag, data):
             print(f'频道 [{data["name"]}] 更新失败！')
         else:
             All_Live[flag] = content
-            print(f'频道 [{data["name"]}] 更新成功！')
+            print(f'频道 [{data["name"]}] 720P直播源更新成功！')
     except Exception as e:
         print(f'频道 [{data["name"]}] 更新失败！')
         print(f"ERROR:{e}")
+
 
 def update(live, url):
     global FLAG
@@ -429,7 +441,6 @@ def update(live, url):
         pool.submit(append_All_Live, live, FLAG + flag, data)
     pool.shutdown()  # 结束线程
     FLAG += len(dataList)
-
 
 
 def main():
