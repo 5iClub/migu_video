@@ -1,19 +1,32 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+咪咕视频 + 彩直播抓取脚本
+包含AES解密功能
+更新日期: 2024-12-08
+"""
+
 import requests
 import json
 import time
 import random
 import hashlib
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
-from Crypto.Cipher import AES
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import base64
 import gzip
 import io
-import os
-import sys
 
-# ============== 配置部分 ==============
-# AES解密常量（与JavaScript一致）
+# ==================== AES解密配置 ====================
+try:
+    from Crypto.Cipher import AES
+    AES_AVAILABLE = True
+except ImportError:
+    print("警告: 未安装pycryptodome，AES解密功能不可用")
+    print("请运行: pip install pycryptodome")
+    AES_AVAILABLE = False
+
+# AES密钥和IV（与JavaScript一致）
 KEY_ARRAY = [121, 111, 117, 33, 106, 101, 64, 49, 57, 114, 114, 36, 50, 48, 121, 35]
 IV_ARRAY = [65, 114, 101, 121, 111, 117, 124, 62, 127, 110, 54, 38, 13, 97, 110, 63]
 
@@ -30,11 +43,7 @@ DOMAIN_WHITE_LIST = [
     "hls.tvming.cn", "live.wifizs.cn", "live.gxtv.cn", "liveplay.gdstv.cn"
 ]
 
-# GitHub项目配置
-REPO_LINK_UPDATE_TIMESTAMP = 0
-DEBUG_MODE = False
-
-# 咪咕视频配置
+# ==================== 咪咕视频配置 ====================
 THREAD_NUM = 10
 MIGU_HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -58,8 +67,9 @@ MIGU_HEADERS = {
     "terminalId": "h5"
 }
 
-MIGU_CATEGORIES = ['热门', '央视', '卫视', '地方', '体育', '影视', '综艺', '少儿', '新闻', '教育', '熊猫', '纪实']
-MIGU_CATEGORY_IDS = {
+# 频道分类
+LIVES = ['热门', '央视', '卫视', '地方', '体育', '影视', '综艺', '少儿', '新闻', '教育', '熊猫', '纪实']
+LIVE_IDS = {
     '热门': 'e7716fea6aa1483c80cfc10b7795fcb8',
     '体育': '7538163cdac044398cb292ecf75db4e0',
     '央视': '1ff892f2b5ab4a79be6e25b69d2f5d05',
@@ -75,261 +85,290 @@ MIGU_CATEGORY_IDS = {
 }
 
 APP_VERSION = "2600034600"
-APP_VERSION_ID = APP_VERSION + "-99000-201600010010028"
+MIGU_TXT = 'migu.txt'
+FENGCAI_M3U = 'fengcai.m3u'
+FENGCAI_TXT = 'fengcai.txt'
+ALL_CHANNELS = 'all_channels.m3u'
 
-# ============== 工具函数 ==============
-def color_print(text, color="white"):
-    """彩色输出（模拟JavaScript的colorOut.js）"""
+
+# ==================== 通用工具函数 ====================
+def print_colored(text, color="white"):
+    """彩色打印输出"""
     colors = {
         "red": "\033[91m",
         "green": "\033[92m",
         "yellow": "\033[93m",
         "blue": "\033[94m",
         "magenta": "\033[95m",
-        "cyan": "\033[96m",
-        "white": "\033[97m"
+        "cyan": "\033[96m"
     }
-    end_color = "\033[0m"
-    print(f"{colors.get(color, colors['white'])}{text}{end_color}")
+    end = "\033[0m"
+    print(f"{colors.get(color, colors.get('white', ''))}{text}{end}")
 
 
-def write_file(path, content, mode='w'):
+def write_file(filepath, content):
     """写入文件"""
-    with open(path, mode, encoding='utf-8') as f:
-        f.write(content)
-
-
-def read_file(path):
-    """读取文件"""
-    if os.path.exists(path):
-        with open(path, 'r', encoding='utf-8') as f:
-            return f.read()
-    return ""
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print_colored(f"文件已保存: {filepath}", "green")
+        return True
+    except Exception as e:
+        print_colored(f"保存文件失败 {filepath}: {e}", "red")
+        return False
 
 
 def md5_hash(text):
-    """MD5加密"""
+    """生成MD5哈希值"""
     return hashlib.md5(text.encode('utf-8')).hexdigest()
 
 
-# ============== JavaScript对应函数 ==============
-def aes_decrypt(base_data, key_array=None, iv_array=None):
-    """AES解密（对应JavaScript的AESdecrypt函数）"""
+# ==================== AES解密函数 ====================
+def aes_decrypt(encrypted_data):
+    """
+    AES解密函数（对应JavaScript的AESdecrypt）
+    支持Base64解码和AES-128-CBC解密
+    """
+    if not AES_AVAILABLE:
+        print_colored("AES解密不可用（未安装pycryptodome）", "red")
+        return encrypted_data
+    
     try:
-        if key_array is None:
-            key_array = KEY_ARRAY
-        if iv_array is None:
-            iv_array = IV_ARRAY
-        
-        key = bytes(key_array)
-        iv = bytes(iv_array)
-        
         # Base64解码
-        data = base64.b64decode(base_data)
+        encrypted_bytes = base64.b64decode(encrypted_data)
         
-        # AES-CBC解密
+        # 创建AES解密器
+        key = bytes(KEY_ARRAY)
+        iv = bytes(IV_ARRAY)
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        decrypted = cipher.decrypt(data)
+        
+        # 解密
+        decrypted_bytes = cipher.decrypt(encrypted_bytes)
         
         # 去除PKCS7填充
-        padding_length = decrypted[-1]
+        padding_length = decrypted_bytes[-1]
         if padding_length < 16:
-            decrypted = decrypted[:-padding_length]
+            decrypted_bytes = decrypted_bytes[:-padding_length]
         
-        return decrypted.decode('utf-8', errors='ignore')
-    except:
-        return base_data
+        # 解码为字符串
+        decrypted_text = decrypted_bytes.decode('utf-8', errors='ignore')
+        
+        # 处理特殊前缀
+        if decrypted_text.startswith("sys_http"):
+            decrypted_text = decrypted_text.replace("sys_", "")
+        
+        return decrypted_text
+        
+    except Exception as e:
+        print_colored(f"AES解密失败: {e}", "yellow")
+        return encrypted_data
 
 
-def is_in_white_list(item, white_list=None):
+def is_in_white_list(domain):
     """检查域名是否在白名单中"""
-    if white_list is None:
-        white_list = DOMAIN_WHITE_LIST
-    return item in white_list
+    return domain in DOMAIN_WHITE_LIST
 
 
-def test_url_availability(url, timeout=0.3):
+def test_url_availability(url, timeout=2):
     """测试URL是否可用"""
     try:
         response = requests.head(url, timeout=timeout, allow_redirects=True)
-        return response.status_code in [200, 302, 301]
+        return response.status_code in [200, 302, 301, 304]
     except:
         return False
 
 
-# ============== 咪咕视频部分 ==============
-class MiguVideo:
+# ==================== 咪咕视频部分 ====================
+class MiguTV:
     def __init__(self):
-        self.thread_num = THREAD_NUM
-        self.headers = MIGU_HEADERS
-        self.all_live = []
-        self.flag = 0
-    
+        self.all_channels = []
+        
     def get_salt_and_sign(self, pid):
-        """生成salt和sign"""
+        """生成加密所需的salt和sign"""
         timestamp = str(int(time.time() * 1000))
         random_num = random.randint(0, 999999)
         salt = f"{random_num:06d}25"
         suffix = "2cac4f2c6c3346a5b34e085725ef7e33migu" + salt[:4]
         app_t = timestamp + pid + APP_VERSION[:8]
         sign = md5_hash(md5_hash(app_t) + suffix)
-        return {
-            "salt": salt,
-            "sign": sign,
-            "timestamp": timestamp
-        }
+        
+        return {"salt": salt, "sign": sign, "timestamp": timestamp}
     
     def get_content(self, pid):
-        """获取频道内容"""
-        _headers = {
-            "accept": "application/json, text/plain, */*",
-            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
-            "apipost-client-id": "465aea51-4548-495a-8709-7e532dbe3703",
-            "apipost-language": "zh-cn",
-            "apipost-machine": "3a214a07786002",
-            "apipost-platform": "Win",
-            "apipost-terminal": "web",
-            "apipost-token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4",
-            "apipost-version": "8.2.6",
-            "cache-control": "no-cache",
-            "content-type": "application/json",
-            "pragma": "no-cache",
-            "priority": "u=1, i",
-            "sec-ch-ua": '"Chromium";v="136", "Microsoft Edge";v="136", "Not.A/Brand";v="99"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-            "cookie": "apipost-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4; SERVERID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691; SERVERCORSID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691",
-            "Referer": "https://workspace.apipost.net/57a21612a051000/apis",
-            "Referrer-Policy": "strict-origin-when-cross-origin"
-        }
+        """获取频道播放信息"""
+        try:
+            result = self.get_salt_and_sign(pid)
+            rate_type = "2" if pid == "608831231" else "3"
+            
+            # 构造URL
+            url = f"https://play.miguvideo.com/playurl/v1/play/playurl"
+            params = {
+                "sign": result["sign"],
+                "rateType": rate_type,
+                "contId": pid,
+                "timestamp": result["timestamp"],
+                "salt": result["salt"]
+            }
+            
+            # 添加必要头部
+            headers = {
+                "User-Agent": MIGU_HEADERS["User-Agent"],
+                "Referer": "https://m.miguvideo.com/",
+                "Origin": "https://m.miguvideo.com"
+            }
+            
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            
+        except Exception as e:
+            print_colored(f"获取内容失败: {e}", "red")
         
-        result = self.get_salt_and_sign(pid)
-        rate_type = "2" if pid == "608831231" else "3"
-        url = f"https://play.miguvideo.com/playurl/v1/play/playurl?sign={result['sign']}&rateType={rate_type}&contId={pid}&timestamp={result['timestamp']}&salt={result['salt']}"
-        
-        body = {
-            "option": {
-                "scene": "http_request",
-                "lang": "zh-cn",
-                "globals": {},
-                "collection": [
-                    {
-                        "target_id": "3c5fd6a9786002",
-                        "target_type": "api",
-                        "parent_id": "0",
-                        "name": "MIGU",
-                        "request": {
-                            "auth": {"type": "inherit"},
-                            "method": "POST",
-                            "url": url
-                        }
-                    }
-                ]
-            },
-            "test_events": [{"type": "api", "data": {"target_id": "3c5fd6a9786002"}}]
-        }
-        
-        proxy_url = "https://workspace.apipost.net/proxy/v2/http"
-        resp = requests.post(proxy_url, headers=_headers, data=json.dumps(body, separators=(",", ":"))).json()
-        return json.loads(resp["data"]["data"]["response"]["body"])
+        return None
     
-    def get_dd_calcu_720p(self, url, pid):
-        """计算ddCalcu参数"""
-        pu_data = url.split("&puData=")[1]
-        keys = "cdabyzwxkl"
-        dd_calcu = []
+    def process_play_url(self, url, pid):
+        """处理播放URL"""
+        if "&puData=" not in url:
+            return url
         
-        for i in range(0, int(len(pu_data) / 2)):
-            dd_calcu.append(pu_data[len(pu_data) - i - 1])
-            dd_calcu.append(pu_data[i])
-            if i == 1:
-                dd_calcu.append("v")
-            if i == 2:
-                dd_calcu.append(keys[int(datetime.now().strftime("%Y%m%d")[2])])
-            if i == 3:
-                dd_calcu.append(keys[int(pid[6])])
-            if i == 4:
-                dd_calcu.append("a")
-        
-        return f'{url}&ddCalcu={"".join(dd_calcu)}&sv=10004&ct=android'
+        try:
+            pu_data = url.split("&puData=")[1]
+            keys = "cdabyzwxkl"
+            dd_calcu = []
+            
+            # 获取当前日期
+            current_date = datetime.now()
+            date_str = f"{current_date.year}{current_date.month:02d}{current_date.day:02d}"
+            
+            for i in range(0, int(len(pu_data) / 2)):
+                dd_calcu.append(pu_data[len(pu_data) - i - 1])
+                dd_calcu.append(pu_data[i])
+                if i == 1:
+                    dd_calcu.append("v")
+                if i == 2:
+                    dd_calcu.append(keys[int(date_str[2])])
+                if i == 3:
+                    dd_calcu.append(keys[int(pid[6]) if len(pid) > 6 else 0])
+                if i == 4:
+                    dd_calcu.append("a")
+            
+            result = f'{url}&ddCalcu={"".join(dd_calcu)}&sv=10004&ct=android'
+            return result
+            
+        except Exception as e:
+            print_colored(f"URL处理失败: {e}", "red")
+            return url
     
-    def process_channel(self, live, flag, data):
+    def follow_redirects(self, url, max_redirects=6):
+        """跟踪重定向"""
+        current_url = url
+        
+        for i in range(max_redirects):
+            try:
+                response = requests.get(current_url, allow_redirects=False, timeout=5)
+                location = response.headers.get("Location", "")
+                if location and location.startswith("http://hlsz"):
+                    current_url = location
+                    break
+                time.sleep(0.15)
+            except:
+                break
+        
+        return current_url
+    
+    def process_channel(self, live_category, channel_data, index):
         """处理单个频道"""
         try:
-            resp_data = self.get_content(data["pID"])
-            play_url = self.get_dd_calcu_720p(resp_data["body"]["urlInfo"]["url"], data["pID"])
+            channel_name = channel_data.get("name", f"频道{index}")
+            pid = channel_data.get("pID", "")
             
-            if play_url:
-                z = 1
-                while z <= 6:
-                    obj = requests.get(play_url, allow_redirects=False)
-                    location = obj.headers.get("Location", "")
-                    
-                    if location.startswith("http://hlsz"):
-                        play_url = location
-                        break
-                    
-                    if z <= 6:
-                        time.sleep(0.15)
-                    z += 1
+            if not pid:
+                return None
             
-            content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{data["pics"]["highResolutionH"]}" group-title="{live}",{data["name"]}\n{play_url}\n'
+            # 获取播放信息
+            content_data = self.get_content(pid)
+            if not content_data or "body" not in content_data:
+                return None
             
-            if z == 7:
-                color_print(f'频道 [{data["name"]}] 更新失败！', "yellow")
-            else:
-                self.all_live[flag] = content
-                color_print(f'频道 [{data["name"]}] 更新成功！', "green")
-                
+            url_info = content_data.get("body", {}).get("urlInfo", {})
+            if not url_info or "url" not in url_info:
+                return None
+            
+            # 处理播放URL
+            play_url = self.process_play_url(url_info["url"], pid)
+            final_url = self.follow_redirects(play_url)
+            
+            if not final_url:
+                return None
+            
+            # 构建M3U条目
+            logo = channel_data.get("pics", {}).get("highResolutionH", "")
+            m3u_entry = f'#EXTINF:-1 tvg-id="{channel_name}" tvg-name="{channel_name}" tvg-logo="{logo}" group-title="{live_category}",{channel_name}\n{final_url}\n'
+            
+            print_colored(f"✓ {channel_name}", "green")
+            return m3u_entry
+            
         except Exception as e:
-            color_print(f'频道 [{data["name"]}] 更新失败！', "red")
-            if DEBUG_MODE:
-                color_print(f"ERROR: {e}", "red")
+            print_colored(f"✗ 频道处理失败: {e}", "yellow")
+            return None
     
-    def update_category(self, live):
-        """更新一个分类的频道"""
-        url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{MIGU_CATEGORY_IDS[live]}'
-        
+    def update_category(self, live_category):
+        """更新单个分类的所有频道"""
         try:
-            response = requests.get(url, headers=self.headers).json()
-            data_list = response["body"]["dataList"]
+            category_id = LIVE_IDS.get(live_category)
+            if not category_id:
+                return []
             
-            with ThreadPoolExecutor(max_workers=self.thread_num) as executor:
-                for flag, data in enumerate(data_list):
-                    self.all_live.append("")
-                    executor.submit(self.process_channel, live, self.flag + flag, data)
+            url = f"https://program-sc.miguvideo.com/live/v2/tv-data/{category_id}"
+            response = requests.get(url, headers=MIGU_HEADERS, timeout=10)
             
-            self.flag += len(data_list)
-            color_print(f"分类 [{live}] 更新完成，共 {len(data_list)} 个频道", "cyan")
+            if response.status_code != 200:
+                return []
+            
+            data = response.json()
+            data_list = data.get("body", {}).get("dataList", [])
+            
+            if not data_list:
+                return []
+            
+            print_colored(f"处理分类: {live_category} ({len(data_list)}个频道)", "cyan")
+            
+            results = []
+            with ThreadPoolExecutor(max_workers=THREAD_NUM) as executor:
+                futures = []
+                for index, channel_data in enumerate(data_list):
+                    future = executor.submit(self.process_channel, live_category, channel_data, index)
+                    futures.append(future)
+                
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        results.append(result)
+            
+            return results
             
         except Exception as e:
-            color_print(f"分类 [{live}] 更新失败: {e}", "red")
+            print_colored(f"分类更新异常: {e}", "red")
+            return []
     
-    def generate_m3u(self):
-        """生成M3U文件"""
+    def generate_m3u(self, entries):
+        """生成完整的M3U文件"""
         m3u_header = '#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/erw.xml" catchup="append" catchup-source="&playbackbegin=${(b)yyyyMMddHHmmss}&playbackend=${(e)yyyyMMddHHmmss}"\n'
-        m3u_content = m3u_header + "".join([c for c in self.all_live if c])
-        
-        return m3u_content
+        return m3u_header + "".join(entries)
 
 
-# ============== 彩直播部分 ==============
-class FengCaiLive:
+# ==================== 彩直播部分 ====================
+class FengCaiTV:
     def __init__(self):
-        self.domains_stat = {}
+        self.success_count = 0
+        self.total_count = 0
     
-    def get_channels(self):
+    def fetch_fengcai_channels(self):
         """获取彩直播频道数据"""
-        color_print("开始获取彩直播频道数据...", "magenta")
+        print_colored("开始获取彩直播频道数据...", "magenta")
         
         channels_m3u = []
         channels_txt = []
-        sum_channel = 0
-        
-        headers = {"Referer": "http://pro.fengcaizb.com"}
         
         try:
             # 尝试多个源
@@ -341,37 +380,31 @@ class FengCaiLive:
             response = None
             for source in sources:
                 try:
-                    response = requests.get(source, headers=headers, timeout=10)
-                    if response.ok:
+                    headers = {"Referer": "http://pro.fengcaizb.com"}
+                    response = requests.get(source, headers=headers, timeout=15)
+                    if response.status_code == 200:
                         break
                 except:
                     continue
             
-            if not response or not response.ok:
-                color_print("请求失败", "red")
-                return 2
-            
-            color_print("开始解压缩...", "magenta")
+            if not response or response.status_code != 200:
+                print_colored("彩直播请求失败", "red")
+                return None
             
             # 解压gzip数据
             compressed_data = io.BytesIO(response.content)
             with gzip.GzipFile(fileobj=compressed_data, mode='rb') as f:
                 decompressed = f.read()
             
-            color_print(f"解压缩完成: {len(response.content)}字节 -> {len(decompressed)}字节", "green")
+            print_colored(f"解压缩完成: {len(response.content)}字节 -> {len(decompressed)}字节", "green")
             
             result = json.loads(decompressed)
-            
-            # 检查时间戳是否需要更新
-            if REPO_LINK_UPDATE_TIMESTAMP > 0 and result.get("timestamp") == REPO_LINK_UPDATE_TIMESTAMP:
-                color_print("数据未更新，跳过", "yellow")
-                return 1
             
             # 构建M3U头部
             channels_m3u.append('#EXTM3U x-tvg-url="https://gh-proxy.com/https://raw.githubusercontent.com/develop202/migu_video/refs/heads/main/playback.xml,https://hk.gh-proxy.org/raw.githubusercontent.com/develop202/migu_video/refs/heads/main/playback.xml,https://develop202.github.io/migu_video/playback.xml,https://raw.githubusercontents.com/develop202/migu_video/refs/heads/main/playback.xml" catchup="append" catchup-source="&playbackbegin=${(b)yyyyMMddHHmmss}&playbackend=${(e)yyyyMMddHHmmss}"')
             
             i = 0
-            last_channel_cate = ""
+            last_province = ""
             
             for channel in result.get("data", []):
                 # 过滤广告频道
@@ -382,9 +415,13 @@ class FengCaiLive:
                 
                 for url in channel.get("urls", []):
                     i += 1
+                    self.total_count += 1
                     
                     # AES解密URL
-                    decrypt_url = aes_decrypt(url)
+                    if AES_AVAILABLE:
+                        decrypt_url = aes_decrypt(url)
+                    else:
+                        decrypt_url = url
                     
                     if decrypt_url.startswith("sys_http"):
                         decrypt_url = decrypt_url.replace("sys_", "")
@@ -407,38 +444,38 @@ class FengCaiLive:
                         if not test_url_availability(decrypt_url):
                             continue
                     
-                    # 统计域名使用情况
-                    if DEBUG_MODE:
-                        self.domains_stat[domain] = self.domains_stat.get(domain, 0) + 1
-                    
                     # 添加频道分类头
                     province = channel.get("province", "")
-                    if province != last_channel_cate:
+                    if province != last_province:
+                        if last_province:  # 如果不是第一个分类，添加空行
+                            channels_txt.append("")
                         channels_txt.append(f"{province},#genre#")
-                        last_channel_cate = province
+                        last_province = province
                     
                     # 构建M3U条目
                     channel_m3u = f'#EXTINF:-1 tvg-id="{channel_title}" tvg-name="{channel_title}" tvg-logo="" group-title="{province}",{channel_title}\n{decrypt_url}'
                     channel_txt = f'{channel_title},{decrypt_url}'
                     
                     # 添加更新时间（第一条记录）
-                    if sum_channel == 0:
+                    if self.success_count == 0:
                         timestamp = result.get("timestamp", 0) + (8 * 60 * 60 * 1000)
                         update_time = datetime.fromtimestamp(timestamp / 1000)
                         update_time_str = f"更新日期: {update_time.year}-{update_time.month:02d}-{update_time.day:02d} {update_time.hour:02d}:{update_time.minute:02d}:{update_time.second:02d}"
                         channels_m3u.append(f'#EXTINF:-1 tvg-id="{channel_title}" tvg-name="{channel_title}" tvg-logo="" group-title="{province}",{update_time_str}\n{decrypt_url}')
                         channels_txt.append(f'{update_time_str},{decrypt_url}')
+                        channels_txt.append("")
                     
                     channels_m3u.append(channel_m3u)
                     channels_txt.append(channel_txt)
-                    sum_channel += 1
+                    self.success_count += 1
                     
-                    color_print(f"{i} {sum_channel} {channel_title} 添加成功！", "green")
+                    if i % 50 == 0:
+                        print_colored(f"已处理 {i} 个频道，成功 {self.success_count} 个", "cyan")
             
-            # 显示文件日期
-            timestamp = result.get("timestamp", 0) + (8 * 60 * 60 * 1000)
-            update_time = datetime.fromtimestamp(timestamp / 1000)
-            color_print(f"文件日期: {update_time.year}-{update_time.month:02d}-{update_time.day:02d} {update_time.hour:02d}:{update_time.minute:02d}:{update_time.second:02d}", "cyan")
+            if self.success_count > 0:
+                timestamp = result.get("timestamp", 0) + (8 * 60 * 60 * 1000)
+                update_time = datetime.fromtimestamp(timestamp / 1000)
+                print_colored(f"文件日期: {update_time.year}-{update_time.month:02d}-{update_time.day:02d} {update_time.hour:02d}:{update_time.minute:02d}", "green")
             
             return {
                 "m3u": "\n".join(channels_m3u),
@@ -446,94 +483,109 @@ class FengCaiLive:
             }
             
         except Exception as e:
-            color_print(f"获取彩直播频道数据失败: {e}", "red")
+            print_colored(f"获取彩直播数据失败: {e}", "red")
             return None
 
 
-# ============== 主程序 ==============
+# ==================== 主程序 ====================
 def main():
-    color_print("=" * 50, "blue")
-    color_print("GitHub 电视频道抓取工具", "cyan")
-    color_print("=" * 50, "blue")
+    """主函数"""
+    print_colored("=" * 60, "blue")
+    print_colored("咪咕视频 + 彩直播抓取工具", "cyan")
+    print_colored(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "cyan")
+    print_colored("=" * 60, "blue")
     
-    # 创建输出目录
-    output_dir = "output"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    start_time = time.time()
     
     # 1. 抓取咪咕视频
-    color_print("\n[1/2] 开始抓取咪咕视频频道...", "magenta")
-    migu = MiguVideo()
+    print_colored("\n[1/2] 开始抓取咪咕视频...", "magenta")
+    migu_count = 0
     
-    for category in MIGU_CATEGORIES:
-        color_print(f"分类 [{category}] 开始更新...", "cyan")
-        migu.update_category(category)
-        time.sleep(1)  # 避免请求过快
+    migu = MiguTV()
+    migu_entries = []
     
-    # 保存咪咕视频结果
-    migu_m3u = migu.generate_m3u()
-    migu_file = os.path.join(output_dir, "migu.m3u")
-    write_file(migu_file, migu_m3u)
-    color_print(f"咪咕视频数据已保存到: {migu_file}", "green")
+    for category in LIVES:
+        category_entries = migu.update_category(category)
+        migu_entries.extend(category_entries)
+        migu_count += len(category_entries)
+        time.sleep(0.5)  # 避免请求过快
+    
+    if migu_entries:
+        migu_content = migu.generate_m3u(migu_entries)
+        write_file(MIGU_TXT, migu_content)
+        print_colored(f"咪咕视频: {migu_count} 个频道", "green")
+    else:
+        print_colored("咪咕视频: 无数据", "yellow")
     
     # 2. 抓取彩直播
-    color_print("\n[2/2] 开始抓取彩直播频道...", "magenta")
-    fengcai = FengCaiLive()
-    fengcai_result = fengcai.get_channels()
+    print_colored("\n[2/2] 开始抓取彩直播...", "magenta")
     
-    if isinstance(fengcai_result, dict):
-        # 保存彩直播结果
-        fengcai_m3u_file = os.path.join(output_dir, "fengcai.m3u")
-        fengcai_txt_file = os.path.join(output_dir, "fengcai.txt")
+    if AES_AVAILABLE:
+        fengcai = FengCaiTV()
+        fengcai_result = fengcai.fetch_fengcai_channels()
         
-        write_file(fengcai_m3u_file, fengcai_result["m3u"])
-        write_file(fengcai_txt_file, fengcai_result["txt"])
-        
-        # 统计信息
-        channel_count = len(fengcai_result["m3u"].split("\n")) - 1
-        color_print(f"彩直播数据已保存，共 {channel_count} 个频道", "green")
-        
-        # 显示域名统计（调试模式）
-        if DEBUG_MODE and fengcai.domains_stat:
-            color_print("\n域名使用统计:", "cyan")
-            sorted_domains = sorted(fengcai.domains_stat.items(), key=lambda x: x[1], reverse=True)
-            for domain, count in sorted_domains[:10]:  # 显示前10个
-                color_print(f"  {domain}: {count}次", "white")
+        if fengcai_result:
+            write_file(FENGCAI_M3U, fengcai_result["m3u"])
+            write_file(FENGCAI_TXT, fengcai_result["txt"])
+            print_colored(f"彩直播: {fengcai.success_count}/{fengcai.total_count} 个频道", "green")
+        else:
+            print_colored("彩直播: 无数据", "yellow")
+    else:
+        print_colored("彩直播: AES解密不可用，跳过", "yellow")
     
-    elif fengcai_result == 1:
-        color_print("彩直播数据未更新，使用缓存", "yellow")
-    elif fengcai_result == 2:
-        color_print("彩直播数据获取失败", "red")
+    # 3. 生成合并文件
+    print_colored("\n[3/3] 生成合并文件...", "magenta")
     
-    # 3. 合并文件（可选）
-    color_print("\n[3/3] 合并所有频道...", "magenta")
-    combined_m3u = []
-    combined_m3u.append('#EXTM3U x-tvg-url="https://gh-proxy.com/https://raw.githubusercontent.com/develop202/migu_video/refs/heads/main/playback.xml" catchup="append" catchup-source="&playbackbegin=${(b)yyyyMMddHHmmss}&playbackend=${(e)yyyyMMddHHmmss}"\n')
+    all_content = []
+    all_content.append('#EXTM3U x-tvg-url="https://gh-proxy.com/https://raw.githubusercontent.com/develop202/migu_video/refs/heads/main/playback.xml" catchup="append" catchup-source="&playbackbegin=${(b)yyyyMMddHHmmss}&playbackend=${(e)yyyyMMddHHmmss}"\n')
+    all_content.append('\n# 咪咕视频\n')
     
-    # 添加咪咕视频
-    combined_m3u.extend([c for c in migu.all_live if c])
+    if migu_entries:
+        # 跳过M3U头部
+        migu_lines = migu_content.split('\n', 1)
+        if len(migu_lines) > 1:
+            all_content.append(migu_lines[1])
     
-    # 添加彩直播（如果有）
-    if isinstance(fengcai_result, dict):
-        combined_m3u.append("\n# 彩直播频道\n")
-        combined_m3u.append(fengcai_result["m3u"].split("\n", 1)[1])
+    if AES_AVAILABLE and fengcai_result:
+        all_content.append('\n# 彩直播\n')
+        all_content.append(fengcai_result["m3u"].split('\n', 1)[1])
     
-    # 保存合并文件
-    combined_file = os.path.join(output_dir, "all_channels.m3u")
-    write_file(combined_file, "".join(combined_m3u))
-    color_print(f"合并文件已保存到: {combined_file}", "green")
+    write_file(ALL_CHANNELS, "".join(all_content))
     
-    color_print("\n所有任务完成！", "green")
-    color_print(f"输出目录: {output_dir}", "cyan")
-    color_print("=" * 50, "blue")
+    # 4. 统计信息
+    end_time = time.time()
+    elapsed = end_time - start_time
+    
+    print_colored("\n" + "=" * 60, "green")
+    print_colored("任务完成！", "green")
+    print_colored(f"总耗时: {elapsed:.2f} 秒", "green")
+    
+    print_colored(f"\n文件输出:", "cyan")
+    print_colored(f"  咪咕视频: {MIGU_TXT}", "white")
+    if AES_AVAILABLE:
+        print_colored(f"  彩直播M3U: {FENGCAI_M3U}", "white")
+        print_colored(f"  彩直播TXT: {FENGCAI_TXT}", "white")
+    print_colored(f"  合并文件: {ALL_CHANNELS}", "white")
+    
+    print_colored(f"\n频道统计:", "cyan")
+    print_colored(f"  咪咕视频: {migu_count} 个", "white")
+    
+    if AES_AVAILABLE and fengcai_result:
+        print_colored(f"  彩直播: {fengcai.success_count} 个", "white")
+    
+    print_colored("=" * 60, "green")
+    
+    return True
 
 
 if __name__ == "__main__":
     try:
-        main()
+        success = main()
+        if not success:
+            exit(1)
     except KeyboardInterrupt:
-        color_print("\n程序被用户中断", "yellow")
-        sys.exit(0)
+        print_colored("\n程序被用户中断", "yellow")
+        exit(0)
     except Exception as e:
-        color_print(f"\n程序运行出错: {e}", "red")
-        sys.exit(1)
+        print_colored(f"\n程序运行出错: {e}", "red")
+        exit(1)
