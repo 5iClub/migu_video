@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
-import urllib.parse
 
 # 保持原线程命名
 thread_mum = 10  # 线程
@@ -98,7 +97,6 @@ def getddCalcu720p_fix1(url, pID):
         return new_url
         
     except Exception as e:
-        print(f"算法1失败: {e}, 返回原始URL")
         return url
 
 def getddCalcu720p_fix2(url, pID):
@@ -131,7 +129,6 @@ def getddCalcu720p_fix2(url, pID):
         return new_url
         
     except Exception as e:
-        print(f"算法2失败: {e}")
         return url
 
 def getddCalcu720p_fix3(url, pID):
@@ -175,7 +172,6 @@ def getddCalcu720p_fix3(url, pID):
         return new_url
         
     except Exception as e:
-        print(f"算法3失败: {e}")
         return url
 
 def smart_getddCalcu720p(url, pID):
@@ -185,7 +181,7 @@ def smart_getddCalcu720p(url, pID):
     if not url or "&puData=" not in url:
         return url
     
-    print(f"开始修复720P，PID: {pID}")
+    print(f"修复720P: {pID[:6]}...")
     
     # 尝试的算法列表
     algorithms = [
@@ -198,7 +194,6 @@ def smart_getddCalcu720p(url, pID):
     try:
         response = requests.head(url, timeout=3, allow_redirects=True)
         if response.status_code < 400:
-            print("原始URL可用，不需要修复")
             return url
     except:
         pass
@@ -212,16 +207,13 @@ def smart_getddCalcu720p(url, pID):
             response = requests.head(fixed_url, timeout=3, allow_redirects=True)
             
             if response.status_code < 400:
-                print(f"✓ {algo_name} 有效")
                 return fixed_url
-            else:
-                print(f"✗ {algo_name} 无效 (HTTP {response.status_code})")
                 
-        except Exception as e:
-            print(f"✗ {algo_name} 异常: {e}")
+        except Exception:
+            continue
     
     # 如果所有算法都失败，尝试降级到480P
-    print("所有算法失败，尝试降级到480P")
+    print(f"降级480P: {pID[:6]}...")
     if "rateType=3" in url:
         # 移除ddCalcu参数并降级到480P
         if "&ddCalcu=" in url:
@@ -236,7 +228,6 @@ def smart_getddCalcu720p(url, pID):
             try:
                 response = requests.head(fallback_url, timeout=3)
                 if response.status_code < 400:
-                    print("✓ 降级到480P成功")
                     return fallback_url
             except:
                 pass
@@ -244,7 +235,6 @@ def smart_getddCalcu720p(url, pID):
     # 最后手段：返回不带ddCalcu的URL
     if "&ddCalcu=" in url:
         base_url = url.split("&ddCalcu=")[0]
-        print("⚠ 返回无ddCalcu的URL")
         return base_url
     
     return url
@@ -264,7 +254,7 @@ def append_All_Live(live, flag, data):
             playurl = playurl_resp
         
         if not playurl:
-            print(f'频道 [{data["name"]}] 更新失败！')
+            # print(f'频道 [{data["name"]}] 更新失败！')
             return
             
         # 后续重定向逻辑保持不变
@@ -275,7 +265,7 @@ def append_All_Live(live, flag, data):
                 if obj.status_code == 302:
                     location = obj.headers.get("Location", "")
                     if location and location.startswith("http://hlsz"):
-                        print('重定向成功')
+                        # print('重定向成功')
                         playurl = location
                         break
                 if z == 6:
@@ -283,17 +273,17 @@ def append_All_Live(live, flag, data):
                 time.sleep(0.15)
                 z += 1
             except Exception as e:
-                print(f"重定向异常: {e}")
                 break
         
         if z <= 6 and playurl:
             content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{data["pics"].get("highResolutionH", "")}" group-title="{live}",{data["name"]}\n{playurl}\n'
             All_Live[flag] = content
-            print(f'频道 [{data["name"]}] 更新成功！')
+            print(f'✓ [{data["name"]}]')
             return
         
     except Exception as e:
-        print(f'频道 [{data["name"]}] 更新失败！Error: {e}')
+        # print(f'频道 [{data["name"]}] 更新失败！Error: {e}')
+        pass
 
 def thread_task(live, data):
     flag = 0
@@ -306,103 +296,116 @@ def writefile(path, content):
     with open(path, 'a', encoding='utf-8') as f:
         f.write(content)
 
-# 保持原有分类和数据结构，但添加更多分类来匹配API
-# 根据Github项目错误信息，API可能返回了不同的结构
-LIVE = {
-    '热门': 'e7716fea6aa1483c80cfc10b7795fcb8',
-    '央视': '1ff892f2b5ab4a79be6e25b69d2f5d05',
-    '卫视': '0847b3f6c08a4ca28f85ba5701268424',  # 修正：卫士->卫视
-    '地方': 'a4e4e0e0cbd44a4fb5b4b2ffb4ab4e7c',
-    '体育': '0c5f2c7f6d344a2f8b7a3d5c8a8b3c6d',
-    '影视': '2d8c8e2b5ab4a79be6e25b69d2f5d05',
-    '综艺': '4c8e2b5ab4a79be6e25b69d2f5d05b8',
-    '少儿': '6c8e2b5ab4a79be6e25b69d2f5d05b8',
-    '新闻': '8c8e2b5ab4a79be6e25b69d2f5d05b8',
-    '教育': 'a8c8e2b5ab4a79be6e25b69d2f5d05b',
-    '熊猫': 'c8c8e2b5ab4a79be6e25b69d2f5d05',
-    '纪实': 'e8c8e2b5ab4a79be6e25b69d2f5d05'
-}
+def get_channel_list(vomsID):
+    """
+    获取分类下的频道列表
+    """
+    try:
+        # 新的API地址 - 获取分类下的频道
+        url = f"https://program-sc.miguvideo.com/live/v2/tv-channel-list/{vomsID}/1/1000"
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            return None
+            
+        data = response.json()
+        
+        # 新的数据结构
+        if data.get("code") == 200:
+            return data.get("body", {}).get("channelList", [])
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"获取频道列表失败: {e}")
+        return None
 
 def main():
     writefile(path, '#EXTM3U\n')
     
-    lives = list(LIVE.keys())
+    # 先获取可用的直播分类
+    print("获取直播分类...")
+    categories_url = "https://program-sc.miguvideo.com/live/v2/tv-data/e7716fea6aa1483c80cfc10b7795fcb8"
     
-    # 为每个分类创建线程执行
-    for live in lives:
-        print(f'开始直播分类 ----- [{live}] -----')
-        url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{LIVE[live]}'
+    try:
+        response = requests.get(categories_url, headers=headers, timeout=10)
+        data = response.json()
         
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
+        if data.get("code") != 200:
+            print("获取分类失败")
+            return
             
-            # 解析JSON并添加错误处理
-            data = response.json()
+        categories = data.get("body", {}).get("liveList", [])
+        
+        if not categories:
+            print("没有找到分类")
+            return
             
-            # 修复：检查数据结构是否包含'data'字段
-            if 'data' in data:
-                channel_data = data['data']
-                print(f'分类 [{live}] 共获取 {len(channel_data)} 个频道')
-            else:
-                # 如果数据结构不同，尝试其他可能的格式
-                print(f"警告：分类 [{live}] API返回的数据结构不包含'data'字段")
-                print(f"返回数据: {json.dumps(data, ensure_ascii=False)[:200]}...")
-                
-                # 尝试直接使用返回的数据（可能是数组）
-                if isinstance(data, list):
-                    channel_data = data
-                    print(f'分类 [{live}] API直接返回{array}，共 {len(channel_data)} 项')
-                elif isinstance(data, dict):
-                    # 尝试找其他可能的键
-                    possible_keys = ['channels', 'list', 'items', 'result']
-                    for key in possible_keys:
-                        if key in data:
-                            channel_data = data[key]
-                            print(f'分类 [{live}] 使用[{key}]字段，共 {len(channel_data)} 个频道')
-                            break
+        print(f"找到 {len(categories)} 个分类")
+        
+    except Exception as e:
+        print(f"获取分类失败: {e}")
+        return
+    
+    # 处理每个分类
+    for category in categories:
+        category_name = category.get("name", "未命名")
+        vomsID = category.get("vomsID")
+        
+        if not vomsID:
+            continue
+            
+        print(f"开始直播分类 ----- [{category_name}] -----")
+        
+        # 获取该分类下的频道列表
+        channel_list = get_channel_list(vomsID)
+        
+        if not channel_list:
+            print(f"分类 [{category_name}] 没有找到频道")
+            continue
+            
+        print(f"分类 [{category_name}] 共获取 {len(channel_list)} 个频道")
+        
+        # 过滤有效频道
+        valid_channels = []
+        for channel in channel_list:
+            if isinstance(channel, dict) and channel.get("pID"):
+                # 确保频道有必要的字段
+                if not channel.get("name"):
+                    if channel.get("title"):
+                        channel["name"] = channel["title"]
                     else:
-                        print(f"❌ 分类 [{live}] 无法解析API返回的数据结构，跳过")
-                        continue
-                else:
-                    print(f"❌ 分类 [{live}] 无法解析API返回的数据结构，跳过")
-                    continue
-            
-        except requests.exceptions.RequestException as e:
-            print(f'❌ 分类 [{live}] 网络请求失败: {e}')
-            continue
-        except json.JSONDecodeError as e:
-            print(f'❌ 分类 [{live}] JSON解析失败: {e}')
-            continue
-        except KeyError as e:
-            print(f'❌ 分类 [{live}] 数据结构错误，缺少字段: {e}')
-            continue
+                        channel["name"] = "未知频道"
+                
+                if not channel.get("pics"):
+                    channel["pics"] = {"highResolutionH": ""}
+                
+                valid_channels.append(channel)
         
-        # 确保channel_data是列表
-        if not isinstance(channel_data, list):
-            print(f'❌ 分类 [{live}] 获取的数据不是列表，跳过')
-            continue
+        print(f"分类 [{category_name}] 有效频道数: {len(valid_channels)}")
         
-        # 过滤有效频道（包含pID）
-        valid_channels = [item for item in channel_data if isinstance(item, dict) and item.get("pID")]
-        print(f'分类 [{live}] 有效频道数: {len(valid_channels)}/{len(channel_data)}')
+        if not valid_channels:
+            continue
         
         # 线程处理
         with ThreadPoolExecutor(max_workers=thread_mum) as executor:
             futures = []
             for i in range(0, len(valid_channels), thread_mum):
                 batch = valid_channels[i:i + thread_mum]
-                future = executor.submit(thread_task, live, batch)
+                future = executor.submit(thread_task, category_name, batch)
                 futures.append(future)
             
             for future in futures:
                 future.result()
     
-    # 写文件逻辑保持不变
-    for key, value in sorted(All_Live.items()):
-        writefile(path, value)
-    
-    print(f'更新完成，共获取 {len(All_Live)} 个频道，写入文件 {path}')
+    # 写文件
+    total_channels = len(All_Live)
+    if total_channels > 0:
+        for key, value in sorted(All_Live.items()):
+            writefile(path, value)
+        print(f'✓ 更新完成，共获取 {total_channels} 个频道，写入文件 {path}')
+    else:
+        print(f'✗ 未能获取任何频道')
 
 if __name__ == '__main__':
     main()
