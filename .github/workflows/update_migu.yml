@@ -25,6 +25,7 @@ jobs:
       - name: 安装依赖
         run: |
           pip install -r requirements.txt
+          pip install pycryptodom
       
       - name: 执行MIGU更新脚本
         run: |
