@@ -25,8 +25,6 @@ jobs:
       - name: 安装依赖
         run: |
           pip install -r requirements.txt
-          # 确保安装正确的包
-          pip install pycryptodome
           # 检查安装
           python -c "from Crypto.Cipher import AES; print('pycryptodome安装成功')"
      
@@ -38,7 +36,7 @@ jobs:
         run: |
           # 检查需要提交的文件
           changes=()
-          for file in migu.txt fengcai.m3u fengcai.txt all_channels.m3u; do
+          for file in migu.txt; do
             if [[ -f "$file" ]] && ! git diff --quiet -- "$file"; then
               changes+=("$file")
             fi
