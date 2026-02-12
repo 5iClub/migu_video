@@ -181,16 +181,14 @@ def smart_getddCalcu720p(url, pID):
     if not url or "&puData=" not in url:
         return url
     
-    print(f"修复720P: {pID[:6]}...")
-    
     # 尝试的算法列表
     algorithms = [
-        ("算法1", getddCalcu720p_fix1),
-        ("算法2", getddCalcu720p_fix2),
-        ("算法3", getddCalcu720p_fix3),
+        getddCalcu720p_fix1,
+        getddCalcu720p_fix2,
+        getddCalcu720p_fix3,
     ]
     
-    # 先检查原始URL是否可用（带已有的ddCalcu）
+    # 先检查原始URL是否可用
     try:
         response = requests.head(url, timeout=3, allow_redirects=True)
         if response.status_code < 400:
@@ -199,7 +197,7 @@ def smart_getddCalcu720p(url, pID):
         pass
     
     # 尝试每种算法
-    for algo_name, algo_func in algorithms:
+    for algo_func in algorithms:
         try:
             fixed_url = algo_func(url, pID)
             
@@ -213,7 +211,6 @@ def smart_getddCalcu720p(url, pID):
             continue
     
     # 如果所有算法都失败，尝试降级到480P
-    print(f"降级480P: {pID[:6]}...")
     if "rateType=3" in url:
         # 移除ddCalcu参数并降级到480P
         if "&ddCalcu=" in url:
@@ -224,13 +221,7 @@ def smart_getddCalcu720p(url, pID):
         # 替换rateType为2 (480P)
         if "rateType=3" in base_url:
             fallback_url = base_url.replace("rateType=3", "rateType=2")
-            # 测试一下
-            try:
-                response = requests.head(fallback_url, timeout=3)
-                if response.status_code < 400:
-                    return fallback_url
-            except:
-                pass
+            return fallback_url
     
     # 最后手段：返回不带ddCalcu的URL
     if "&ddCalcu=" in url:
@@ -254,7 +245,6 @@ def append_All_Live(live, flag, data):
             playurl = playurl_resp
         
         if not playurl:
-            # print(f'频道 [{data["name"]}] 更新失败！')
             return
             
         # 后续重定向逻辑保持不变
@@ -265,7 +255,6 @@ def append_All_Live(live, flag, data):
                 if obj.status_code == 302:
                     location = obj.headers.get("Location", "")
                     if location and location.startswith("http://hlsz"):
-                        # print('重定向成功')
                         playurl = location
                         break
                 if z == 6:
@@ -276,13 +265,18 @@ def append_All_Live(live, flag, data):
                 break
         
         if z <= 6 and playurl:
-            content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{data["pics"].get("highResolutionH", "")}" group-title="{live}",{data["name"]}\n{playurl}\n'
+            # 获取频道名称和logo
+            channel_name = data.get("name") or data.get("title") or "未知频道"
+            channel_logo = ""
+            if data.get("pics"):
+                channel_logo = data["pics"].get("highResolutionH") or data["pics"].get("highResolutionV") or ""
+            
+            content = f'#EXTINF:-1 tvg-id="{channel_name}" tvg-name="{channel_name}" tvg-logo="{channel_logo}" group-title="{live}",{channel_name}\n{playurl}\n'
             All_Live[flag] = content
-            print(f'✓ [{data["name"]}]')
+            print(f'✓ {live}: {channel_name}')
             return
         
     except Exception as e:
-        # print(f'频道 [{data["name"]}] 更新失败！Error: {e}')
         pass
 
 def thread_task(live, data):
@@ -298,23 +292,46 @@ def writefile(path, content):
 
 def get_channel_list(vomsID):
     """
-    获取分类下的频道列表
+    修复：获取分类下的频道列表 - 尝试多种API
     """
     try:
-        # 新的API地址 - 获取分类下的频道
-        url = f"https://program-sc.miguvideo.com/live/v2/tv-channel-list/{vomsID}/1/1000"
-        response = requests.get(url, headers=headers, timeout=10)
+        # 方案1：尝试原来的API
+        url1 = f"https://program-sc.miguvideo.com/live/v2/tv-channel-list/{vomsID}/1/1000"
+        response1 = requests.get(url1, headers=headers, timeout=5)
         
-        if response.status_code != 200:
-            return None
-            
-        data = response.json()
+        if response1.status_code == 200:
+            data1 = response1.json()
+            print(f"API方案1响应: {json.dumps(data1, ensure_ascii=False)[:100]}...")
+            if data1.get("code") == 200:
+                channel_list = data1.get("body", {}).get("channelList", [])
+                if channel_list:
+                    return channel_list
         
-        # 新的数据结构
-        if data.get("code") == 200:
-            return data.get("body", {}).get("channelList", [])
-        else:
-            return None
+        # 方案2：尝试不同的API格式
+        url2 = f"https://program-sc.miguvideo.com/live/v2/tv-channel-list?categoryId={vomsID}&pageNum=1&pageSize=1000"
+        response2 = requests.get(url2, headers=headers, timeout=5)
+        
+        if response2.status_code == 200:
+            data2 = response2.json()
+            print(f"API方案2响应: {json.dumps(data2, ensure_ascii=False)[:100]}...")
+            if data2.get("code") == 200:
+                channel_list = data2.get("body", {}).get("list", data2.get("body", {}).get("data", []))
+                if channel_list:
+                    return channel_list
+        
+        # 方案3：尝试搜索API
+        url3 = f"https://program-sc.miguvideo.com/live/v2/search-channel?category={vomsID}&page=1&size=1000"
+        response3 = requests.get(url3, headers=headers, timeout=5)
+        
+        if response3.status_code == 200:
+            data3 = response3.json()
+            print(f"API方案3响应: {json.dumps(data3, ensure_ascii=False)[:100]}...")
+            if data3.get("code") == 200:
+                channel_list = data3.get("body", {}).get("channels", [])
+                if channel_list:
+                    return channel_list
+                
+        return None
             
     except Exception as e:
         print(f"获取频道列表失败: {e}")
@@ -325,27 +342,65 @@ def main():
     
     # 先获取可用的直播分类
     print("获取直播分类...")
-    categories_url = "https://program-sc.miguvideo.com/live/v2/tv-data/e7716fea6aa1483c80cfc10b7795fcb8"
     
-    try:
-        response = requests.get(categories_url, headers=headers, timeout=10)
-        data = response.json()
-        
-        if data.get("code") != 200:
-            print("获取分类失败")
-            return
+    # 尝试多个可能的分类API
+    category_apis = [
+        "https://program-sc.miguvideo.com/live/v2/tv-category",
+        "https://program-sc.miguvideo.com/live/v2/tv-data/e7716fea6aa1483c80cfc10b7795fcb8",
+        "https://program-sc.miguvideo.com/live/v2/category-list",
+    ]
+    
+    categories = []
+    
+    for api_url in category_apis:
+        try:
+            print(f"尝试API: {api_url}")
+            response = requests.get(api_url, headers=headers, timeout=10)
+            data = response.json()
             
-        categories = data.get("body", {}).get("liveList", [])
-        
-        if not categories:
-            print("没有找到分类")
-            return
+            print(f"API响应: {json.dumps(data, ensure_ascii=False)[:200]}...")
             
-        print(f"找到 {len(categories)} 个分类")
+            if data.get("code") == 200:
+                # 尝试不同的数据结构
+                body = data.get("body", {})
+                
+                # 方案1：直接从liveList获取
+                if "liveList" in body:
+                    categories = body.get("liveList", [])
+                    print(f"从liveList获取到 {len(categories)} 个分类")
+                    break
+                    
+                # 方案2：从categoryList获取
+                elif "categoryList" in body:
+                    categories = body.get("categoryList", [])
+                    print(f"从categoryList获取到 {len(categories)} 个分类")
+                    break
+                    
+                # 方案3：直接返回数组
+                elif isinstance(body, list):
+                    categories = body
+                    print(f"直接获取到 {len(categories)} 个分类")
+                    break
         
-    except Exception as e:
-        print(f"获取分类失败: {e}")
-        return
+        except Exception as e:
+            print(f"API {api_url} 失败: {e}")
+            continue
+    
+    if not categories:
+        print("无法获取分类，使用默认分类")
+        # 使用已知的分类vomsID
+        categories = [
+            {"name": "央视", "vomsID": "1ff892f2b5ab4a79be6e25b69d2f5d05"},
+            {"name": "卫视", "vomsID": "0847b3f6c08a4ca28f85ba5701268424"},
+            {"name": "地方", "vomsID": "3fdbbd9cdad54f80ae9ff8def9aeb5c4"},
+            {"name": "体育", "vomsID": "7538163cdac044398cb292ecf75db4e0"},
+            {"name": "影视", "vomsID": "a28ccb4e9d404e3b9a7b2af7bb3a4b1c"},
+            {"name": "综艺", "vomsID": "b39ccb4e9d404e3b9a7b2af7bb3a4b1d"},
+            {"name": "少儿", "vomsID": "c49ccb4e9d404e3b9a7b2af7bb3a4b1e"},
+            {"name": "新闻", "vomsID": "d59ccb4e9d404e3b9a7b2af7bb3a4b1f"},
+        ]
+    
+    print(f"找到 {len(categories)} 个分类")
     
     # 处理每个分类
     for category in categories:
@@ -355,57 +410,85 @@ def main():
         if not vomsID:
             continue
             
-        print(f"开始直播分类 ----- [{category_name}] -----")
+        print(f"\n开始直播分类 ----- [{category_name}] -----")
         
-        # 获取该分类下的频道列表
-        channel_list = get_channel_list(vomsID)
-        
-        if not channel_list:
-            print(f"分类 [{category_name}] 没有找到频道")
-            continue
+        # 直接获取该分类下的所有直播列表（使用搜索API）
+        try:
+            # 使用搜索API获取该分类下的所有频道
+            search_url = f"https://program-sc.miguvideo.com/live/v2/search-channel?keyword=&categoryId={vomsID}&page=1&size=200"
+            print(f"搜索URL: {search_url}")
             
-        print(f"分类 [{category_name}] 共获取 {len(channel_list)} 个频道")
-        
-        # 过滤有效频道
-        valid_channels = []
-        for channel in channel_list:
-            if isinstance(channel, dict) and channel.get("pID"):
-                # 确保频道有必要的字段
-                if not channel.get("name"):
-                    if channel.get("title"):
-                        channel["name"] = channel["title"]
-                    else:
-                        channel["name"] = "未知频道"
+            response = requests.get(search_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                print(f"搜索响应: {json.dumps(data, ensure_ascii=False)[:150]}...")
                 
-                if not channel.get("pics"):
-                    channel["pics"] = {"highResolutionH": ""}
-                
-                valid_channels.append(channel)
-        
-        print(f"分类 [{category_name}] 有效频道数: {len(valid_channels)}")
-        
-        if not valid_channels:
-            continue
-        
-        # 线程处理
-        with ThreadPoolExecutor(max_workers=thread_mum) as executor:
-            futures = []
-            for i in range(0, len(valid_channels), thread_mum):
-                batch = valid_channels[i:i + thread_mum]
-                future = executor.submit(thread_task, category_name, batch)
-                futures.append(future)
+                if data.get("code") == 200:
+                    # 尝试不同的数据结构
+                    body = data.get("body", {})
+                    
+                    # 方案1：从channels获取
+                    channels = body.get("channels", [])
+                    if not channels:
+                        # 方案2：从list获取
+                        channels = body.get("list", [])
+                    
+                    if not channels:
+                        # 方案3：从data获取（可能是列表）
+                        channels_data = body.get("data", [])
+                        if isinstance(channels_data, list):
+                            channels = channels_data
+                    
+                    print(f"分类 [{category_name}] 搜索结果: {len(channels)} 个频道")
+                    
+                    # 处理频道
+                    if channels:
+                        valid_channels = []
+                        
+                        for channel in channels:
+                            if isinstance(channel, dict):
+                                # 获取pID（可能有不同的字段名）
+                                pID = channel.get("pID") or channel.get("programId") or channel.get("contId")
+                                if pID:
+                                    # 确保有必要的字段
+                                    channel_copy = channel.copy()
+                                    channel_copy["pID"] = str(pID)
+                                    
+                                    if not channel_copy.get("name"):
+                                        channel_copy["name"] = channel.get("title") or channel.get("programName") or "未知频道"
+                                    
+                                    if not channel_copy.get("pics"):
+                                        channel_copy["pics"] = {
+                                            "highResolutionH": channel.get("imageH") or channel.get("logo") or ""
+                                        }
+                                    
+                                    valid_channels.append(channel_copy)
+                        
+                        print(f"分类 [{category_name}] 有效频道数: {len(valid_channels)}")
+                        
+                        if valid_channels:
+                            # 线程处理
+                            with ThreadPoolExecutor(max_workers=thread_mum) as executor:
+                                futures = []
+                                for i in range(0, len(valid_channels), thread_mum):
+                                    batch = valid_channels[i:i + thread_mum]
+                                    future = executor.submit(thread_task, category_name, batch)
+                                    futures.append(future)
+                                
+                                for future in futures:
+                                    future.result()
             
-            for future in futures:
-                future.result()
+        except Exception as e:
+            print(f"处理分类 [{category_name}] 失败: {e}")
     
     # 写文件
     total_channels = len(All_Live)
     if total_channels > 0:
         for key, value in sorted(All_Live.items()):
             writefile(path, value)
-        print(f'✓ 更新完成，共获取 {total_channels} 个频道，写入文件 {path}')
+        print(f'\n✓ 更新完成，共获取 {total_channels} 个频道，写入文件 {path}')
     else:
-        print(f'✗ 未能获取任何频道')
+        print(f'\n✗ 未能获取任何频道')
 
 if __name__ == '__main__':
     main()
