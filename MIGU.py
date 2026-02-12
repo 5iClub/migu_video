@@ -6,7 +6,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 
-# 保持原线程命名（虽然有拼写错误但不修改）
+# 保持原线程命名
 thread_mum = 10  # 线程
 
 # 保持原有变量
@@ -19,21 +19,16 @@ headers = {
 }
 
 def getSaltAndSign(pID):
-    # 原有函数保持不变
-    from datetime import datetime
-    import time
     timestamp = int(time.time() * 1000)
     sign_str = f'contId={pID}&timestamp={timestamp}'
     salt = timestamp % 1000000
     sign_str += str(salt)
-    import hashlib
     sign = hashlib.md5(sign_str.encode()).hexdigest()
     return {'timestamp': timestamp, 'salt': salt, 'sign': sign} 
 
 def get_content(pID):
-    # 原有函数保持不变
     result = getSaltAndSign(pID)
-    rateType = "2"        if  pID == "608831231" else "3"
+    rateType = "2" if pID == "608831231" else "3"
     headers = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 12; SM-G9910 Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/86.0.4240.99 XWEB/3262 MMWEBSDK/20220204 Mobile Safari/537.36 MMWEBID/6170 MicroMessenger/8.0.20.2100(0x28001438) Process/toolsmp WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64"
     }
@@ -256,13 +251,11 @@ def smart_getddCalcu720p(url, pID):
 
 ########## 修复部分结束 ##########
 
-# 以下代码保持原样不变
-
 def append_All_Live(live, flag, data):
     try:
         respData = get_content(data["pID"])
         
-        # 修改：使用智能修复算法
+        # 使用智能修复算法
         playurl_resp = respData.get("body", {}).get("urlInfo", {}).get("url", "")
         if playurl_resp:
             # 使用智能修复算法
@@ -304,7 +297,6 @@ def append_All_Live(live, flag, data):
 
 def thread_task(live, data):
     flag = 0
-    # 保持原有线程任务逻辑不变
     for item in data:
         flag += 1
         if item.get("pID"):
@@ -314,11 +306,12 @@ def writefile(path, content):
     with open(path, 'a', encoding='utf-8') as f:
         f.write(content)
 
-# 保持原有分类和数据结构不变
+# 保持原有分类和数据结构，但添加更多分类来匹配API
+# 根据Github项目错误信息，API可能返回了不同的结构
 LIVE = {
     '热门': 'e7716fea6aa1483c80cfc10b7795fcb8',
     '央视': '1ff892f2b5ab4a79be6e25b69d2f5d05',
-    '卫士': '0847b3f6c08a4ca28f85ba5701268424',
+    '卫视': '0847b3f6c08a4ca28f85ba5701268424',  # 修正：卫士->卫视
     '地方': 'a4e4e0e0cbd44a4fb5b4b2ffb4ab4e7c',
     '体育': '0c5f2c7f6d344a2f8b7a3d5c8a8b3c6d',
     '影视': '2d8c8e2b5ab4a79be6e25b69d2f5d05',
@@ -340,15 +333,65 @@ def main():
         print(f'开始直播分类 ----- [{live}] -----')
         url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{LIVE[live]}'
         
-        response = requests.get(url, headers=headers)
-        data = response.json()
-        data = data['data']
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            # 解析JSON并添加错误处理
+            data = response.json()
+            
+            # 修复：检查数据结构是否包含'data'字段
+            if 'data' in data:
+                channel_data = data['data']
+                print(f'分类 [{live}] 共获取 {len(channel_data)} 个频道')
+            else:
+                # 如果数据结构不同，尝试其他可能的格式
+                print(f"警告：分类 [{live}] API返回的数据结构不包含'data'字段")
+                print(f"返回数据: {json.dumps(data, ensure_ascii=False)[:200]}...")
+                
+                # 尝试直接使用返回的数据（可能是数组）
+                if isinstance(data, list):
+                    channel_data = data
+                    print(f'分类 [{live}] API直接返回{array}，共 {len(channel_data)} 项')
+                elif isinstance(data, dict):
+                    # 尝试找其他可能的键
+                    possible_keys = ['channels', 'list', 'items', 'result']
+                    for key in possible_keys:
+                        if key in data:
+                            channel_data = data[key]
+                            print(f'分类 [{live}] 使用[{key}]字段，共 {len(channel_data)} 个频道')
+                            break
+                    else:
+                        print(f"❌ 分类 [{live}] 无法解析API返回的数据结构，跳过")
+                        continue
+                else:
+                    print(f"❌ 分类 [{live}] 无法解析API返回的数据结构，跳过")
+                    continue
+            
+        except requests.exceptions.RequestException as e:
+            print(f'❌ 分类 [{live}] 网络请求失败: {e}')
+            continue
+        except json.JSONDecodeError as e:
+            print(f'❌ 分类 [{live}] JSON解析失败: {e}')
+            continue
+        except KeyError as e:
+            print(f'❌ 分类 [{live}] 数据结构错误，缺少字段: {e}')
+            continue
         
-        # 保持原有线程处理逻辑不变
+        # 确保channel_data是列表
+        if not isinstance(channel_data, list):
+            print(f'❌ 分类 [{live}] 获取的数据不是列表，跳过')
+            continue
+        
+        # 过滤有效频道（包含pID）
+        valid_channels = [item for item in channel_data if isinstance(item, dict) and item.get("pID")]
+        print(f'分类 [{live}] 有效频道数: {len(valid_channels)}/{len(channel_data)}')
+        
+        # 线程处理
         with ThreadPoolExecutor(max_workers=thread_mum) as executor:
             futures = []
-            for i in range(0, len(data), thread_mum):
-                batch = data[i:i + thread_mum]
+            for i in range(0, len(valid_channels), thread_mum):
+                batch = valid_channels[i:i + thread_mum]
                 future = executor.submit(thread_task, live, batch)
                 futures.append(future)
             
@@ -359,7 +402,7 @@ def main():
     for key, value in sorted(All_Live.items()):
         writefile(path, value)
     
-    print(f'更新完成，写入文件 {path}')
+    print(f'更新完成，共获取 {len(All_Live)} 个频道，写入文件 {path}')
 
 if __name__ == '__main__':
     main()
