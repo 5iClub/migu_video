@@ -1,444 +1,449 @@
 import requests
-import time
 import json
-from datetime import datetime
+import time
+import random
 import hashlib
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-# 保持原线程命名
-thread_mum = 10
-
-# 保持原有变量
-All_Live = {}
-path = 'migu.m3u'
+thread_mum = 10  # 线程
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Referer": "https://www.miguvideo.com/",
-    "Origin": "https://www.miguvideo.com",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Origin": "https://m.miguvideo.com",
+    "Pragma": "no-cache",
+    "Referer": "https://m.miguvideo.com/",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-site",
+    "Support-Pendant": "1",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0",
+    "appCode": "miguvideo_default_h5",
+    "appId": "miguvideo",
+    "channel": "H5",
+    "sec-ch-ua": "\"Chromium\";v=\"136\", \"Microsoft Edge\";v=\"136\", \"Not.A/Brand\";v=\"99\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"Windows\"",
+    "terminalId": "h5"
 }
+lives = ['热门', '央视', '卫视', '地方', '体育', '影视', '综艺', '少儿', '新闻', '教育', '熊猫', '纪实']
+LIVE = {'热门': 'e7716fea6aa1483c80cfc10b7795fcb8', '体育': '7538163cdac044398cb292ecf75db4e0',
+        '央视': '1ff892f2b5ab4a79be6e25b69d2f5d05', '卫视': '0847b3f6c08a4ca28f85ba5701268424',
+        '地方': '855e9adc91b04ea18ef3f2dbd43f495b', '影视': '10b0d04cb23d4ac5945c4bc77c7ac44e',
+        '新闻': 'c584f67ad63f4bc983c31de3a9be977c', '教育': 'af72267483d94275995a4498b2799ecd',
+        '熊猫': 'e76e56e88fff4c11b0168f55e826445d', '综艺': '192a12edfef04b5eb616b878f031f32f',
+        '少儿': 'fc2f5b8fd7db43ff88c4243e731ecede', '纪实': 'e1165138bdaa44b9a3138d74af6c6673'}
+path = 'migu.txt'
+appVersion = "2600034600"
+appVersionID = appVersion + "-99000-201600010010028"
+All_Live = []
+FLAG = 0
 
-def getSaltAndSign(pID):
-    timestamp = int(time.time() * 1000)
-    sign_str = f'contId={pID}&timestamp={timestamp}'
-    salt = timestamp % 1000000
-    sign_str += str(salt)
-    sign = hashlib.md5(sign_str.encode()).hexdigest()
-    return {'timestamp': timestamp, 'salt': salt, 'sign': sign} 
 
-def get_content(pID):
-    result = getSaltAndSign(pID)
-    rateType = "2" if pID == "608831231" else "3"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 12; SM-G9910 Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/86.0.4240.99 XWEB/3262 MMWEBSDK/20220204 Mobile Safari/537.36 MMWEBID/6170 MicroMessenger/8.0.20.2100(0x28001438) Process/toolsmp WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64"
+def format_date_ymd():
+    """
+    格式化日期为「年+补0月+补0日」字符串（对应JS逻辑）
+    :return: 如"20251216"
+    """
+    current_date = datetime.now()
+    return f"{current_date.year}{current_date.month:02d}{current_date.day:02d}"
+
+
+def writefile(path, content):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+
+def appendfile(path, content):
+    with open(path, 'a+', encoding='utf-8') as f:
+        f.write(content)
+
+
+def md5(text):
+    """MD5加密：返回32位小写结果"""
+    # 创建MD5对象
+    md5_obj = hashlib.md5()
+    # 更新加密内容（需转字节流）
+    md5_obj.update(text.encode('utf-8'))
+    # 获取16进制加密结果
+    return md5_obj.hexdigest()
+
+
+def getSaltAndSign(pid):
+    timestamp = str(int(time.time() * 1000))
+    random_num = random.randint(0, 999999)
+    salt = f"{random_num:06d}25"
+    suffix = "2cac4f2c6c3346a5b34e085725ef7e33migu" + salt[:4]
+    app_t = timestamp + pid + appVersion[:8]
+    sign = md5(md5(app_t) + suffix)
+    return {
+        "salt": salt,
+        "sign": sign,
+        "timestamp": timestamp
     }
-    url = f'https://play.miguvideo.com/playurl/v1/play/playurl?sign={result["sign"]}&rateType={rateType}&contId={pID}&timestamp={result["timestamp"]}&salt={result["salt"]}'
-    response = requests.get(url, headers=headers, timeout=10)
-    return response.json()
 
-########## 修复部分开始 ##########
 
-def getddCalcu720p_fix1(url, pID):
-    """
-    修复方案1：基于原算法改进
-    """
-    try:
-        if "&puData=" not in url:
-            return url
-            
-        puData_part = url.split("&puData=")[1]
-        puData = puData_part.split("&")[0]
-        
-        now = datetime.now()
-        day_str = str(now.day).zfill(2)
-        month_str = str(now.month).zfill(2)
-        
-        keys = "cdabyzwxklnmopqrstuvwxyz0123456789"
-        
-        ddCalcu_chars = []
-        puData_len = len(puData)
-        
-        start_pos = max(0, puData_len - 8)
-        for i in range(min(8, puData_len)):
-            pos = start_pos + i
-            if pos < puData_len:
-                ddCalcu_chars.append(puData[pos])
-            
-            if i == 1:
-                ddCalcu_chars.append('v')
-            elif i == 3:
-                day_last = int(day_str[-1])
-                key_idx = (day_last + int(pID[0]) if pID and len(pID) > 0 else day_last) % len(keys)
-                ddCalcu_chars.append(keys[key_idx])
-            elif i == 5 and len(pID) > 2:
-                pID_idx = (int(pID[2]) if pID[2].isdigit() else 5) % len(keys)
-                ddCalcu_chars.append(keys[pID_idx])
-        
-        target_length = min(12, max(8, puData_len // 2))
-        while len(ddCalcu_chars) < target_length:
-            idx = (len(ddCalcu_chars) * 7) % len(keys)
-            ddCalcu_chars.append(keys[idx])
-        
-        ddCalcu = "".join(ddCalcu_chars[:target_length])
-        
-        if "&ddCalcu=" in url:
-            base_url = url.split("&ddCalcu=")[0]
-        else:
-            base_url = url
-            
-        new_url = f'{base_url}&ddCalcu={ddCalcu}&sv=10004&ct=android'
-        return new_url
-        
-    except Exception as e:
-        return url
+def get_content(pid):
+    _headers = {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "apipost-client-id": "465aea51-4548-495a-8709-7e532dbe3703",
+        "apipost-language": "zh-cn",
+        "apipost-machine": "3a214a07786002",
+        "apipost-platform": "Win",
+        "apipost-terminal": "web",
+        "apipost-token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4",
+        "apipost-version": "8.2.6",
+        "cache-control": "no-cache",
+        "content-type": "application/json",
+        "pragma": "no-cache",
+        "priority": "u=1, i",
+        "sec-ch-ua": '"Chromium";v="136", "Microsoft Edge";v="136", "Not.A/Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "cookie": "apipost-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4; SERVERID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691; SERVERCORSID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691",
+        "Referer": "https://workspace.apipost.net/57a21612a051000/apis",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
+    }
+    result = getSaltAndSign(pid)
+    rateType = "2" if pid == "608831231" else "3"  # 广东卫视有些特殊
+    URL = f"https://play.miguvideo.com/playurl/v1/play/playurl?sign={result['sign']}&rateType={rateType}&contId={pid}&timestamp={result['timestamp']}&salt={result['salt']}"
+    params = URL.split("?")[1].split("&")
+    body = {
+        "option": {
+            "scene": "http_request",
+            "lang": "zh-cn",
+            "globals": {},
+            "project": {
+                "request": {
+                    "header": {
+                        "parameter": [
+                            {
+                                "key": "Accept",
+                                "value": "*/*",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            },
+                            {
+                                "key": "Accept-Encoding",
+                                "value": "gzip, deflate, br",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            },
+                            {
+                                "key": "User-Agent",
+                                "value": "PostmanRuntime-ApipostRuntime/1.1.0",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            },
+                            {
+                                "key": "Connection",
+                                "value": "keep-alive",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            }
+                        ]
+                    },
+                    "query": {
+                        "parameter": []
+                    },
+                    "body": {
+                        "parameter": []
+                    },
+                    "cookie": {
+                        "parameter": []
+                    },
+                    "auth": {
+                        "type": "noauth"
+                    },
+                    "pre_tasks": [],
+                    "post_tasks": []
+                }
+            },
+            "env": {
+                "env_id": "1",
+                "env_name": "默认环境",
+                "env_pre_url": "",
+                "env_pre_urls": {
+                    "1": {
+                        "server_id": "1",
+                        "name": "默认服务",
+                        "sort": 1000,
+                        "uri": ""
+                    },
+                    "default": {
+                        "server_id": "1",
+                        "name": "默认服务",
+                        "sort": 1000,
+                        "uri": ""
+                    }
+                },
+                "environment": {}
+            },
+            "cookies": {
+                "switch": 1,
+                "data": []
+            },
+            "system_configs": {
+                "send_timeout": 0,
+                "auto_redirect": -1,
+                "max_redirect_time": 5,
+                "auto_gen_mock_url": -1,
+                "request_param_auto_json": -1,
+                "proxy": {
+                    "type": 2,
+                    "envfirst": 1,
+                    "bypass": [],
+                    "protocols": [
+                        "http"
+                    ],
+                    "auth": {
+                        "authenticate": -1,
+                        "host": "",
+                        "username": "",
+                        "password": ""
+                    }
+                },
+                "ca_cert": {
+                    "open": -1,
+                    "path": "",
+                    "base64": ""
+                },
+                "client_cert": {}
+            },
+            "custom_functions": {},
+            "collection": [
+                {
+                    "target_id": "3c5fd6a9786002",
+                    "target_type": "api",
+                    "parent_id": "0",
+                    "name": "MIGU",
+                    "request": {
+                        "auth": {
+                            "type": "inherit"
+                        },
+                        "body": {
+                            "mode": "None",
+                            "parameter": [],
+                            "raw": "",
+                            "raw_parameter": [],
+                            "raw_schema": {
+                                "type": "object"
+                            },
+                            "binary": None
+                        },
+                        "pre_tasks": [],
+                        "post_tasks": [],
+                        "header": {
+                            "parameter": [
+                                {
+                                    "description": "",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": " AppVersion",
+                                    "value": "2600034600",
+                                    "not_None": 1,
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "param_id": "3c60653273e0b3"
+                                },
+                                {
+                                    "description": "",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "TerminalId",
+                                    "value": "android",
+                                    "not_None": 1,
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "param_id": "3c6075c1f3e0e1"
+                                },
+                                {
+                                    "description": "",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "X-UP-CLIENT-CHANNEL-ID",
+                                    "value": "2600034600-99000-201600010010028",
+                                    "not_None": 1,
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "param_id": "3c60858bb3e10c"
+                                }
+                            ]
+                        },
+                        "query": {
+                            "parameter": [
+                                {
+                                    "param_id": "3c5fd74233e004",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "sign",
+                                    "not_None": 1,
+                                    "value": params[0].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c6022f433e030",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "rateType",
+                                    "not_None": 1,
+                                    "value": params[1].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c60354133e05b",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "contId",
+                                    "not_None": 1,
+                                    "value": params[2].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c605e4bf860b1",
+                                    "field_type": "String",
+                                    "is_checked": 1,
+                                    "key": "timestamp",
+                                    "not_None": 1,
+                                    "value": params[3].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c605e4c3860b2",
+                                    "field_type": "String",
+                                    "is_checked": 1,
+                                    "key": "salt",
+                                    "not_None": 1,
+                                    "value": params[4].split("=")[1],
+                                    "description": ""
+                                }
+                            ],
+                            "query_add_equal": 1
+                        },
+                        "cookie": {
+                            "parameter": [],
+                            "cookie_encode": 1
+                        },
+                        "restful": {
+                            "parameter": []
+                        },
+                        "tabs_default_active_key": "query"
+                    },
+                    "parents": [],
+                    "method": "POST",
+                    "protocol": "http/1.1",
+                    "url": URL,
+                    "pre_url": ""
+                }
+            ],
+            "database_configs": {}
+        },
+        "test_events": [
+            {
+                "type": "api",
+                "data": {
+                    "target_id": "3c5fd6a9786002",
+                    "project_id": "57a21612a051000",
+                    "parent_id": "0",
+                    "target_type": "api"
+                }
+            }
+        ]
+    }
+    body = json.dumps(body, separators=(",", ":"))
+    url = "https://workspace.apipost.net/proxy/v2/http"
+    resp = requests.post(url, headers=_headers, data=body).json()
+    return json.loads(resp["data"]["data"]["response"]["body"])
 
-def getddCalcu720p_fix2(url, pID):
-    try:
-        if "&puData=" not in url:
-            return url
-            
-        puData_part = url.split("&puData=")[1]
-        puData = puData_part.split("&")[0]
-        
-        now = datetime.now()
-        input_str = f"{puData}_{pID}_{now.strftime('%Y%m%d%H')}"
-        
-        md5_hash = hashlib.md5(input_str.encode()).hexdigest()
-        ddCalcu = md5_hash[:12]
-        
-        if "&ddCalcu=" in url:
-            base_url = url.split("&ddCalcu=")[0]
-        else:
-            base_url = url
-            
-        new_url = f'{base_url}&ddCalcu={ddCalcu}&sv=10004&ct=android'
-        return new_url
-        
-    except Exception as e:
-        return url
 
-def getddCalcu720p_fix3(url, pID):
-    try:
-        if "&puData=" not in url:
-            return url
-            
-        puData_part = url.split("&puData=")[1]
-        puData = puData_part.split("&")[0]
-        
-        reversed_part = puData[::-1]
-        base_part = reversed_part[:8]
-        
-        fixed_chars = ['v', '2', 'a', '5']
-        
-        ddCalcu_list = []
-        for i in range(12):
-            if i < len(base_part):
-                ddCalcu_list.append(base_part[i])
-            else:
-                fix_idx = (i - len(base_part)) % len(fixed_chars)
-                ddCalcu_list.append(fixed_chars[fix_idx])
-        
-        ddCalcu = "".join(ddCalcu_list)[:12]
-        
-        if "&ddCalcu=" in url:
-            base_url = url.split("&ddCalcu=")[0]
-        else:
-            base_url = url
-            
-        new_url = f'{base_url}&ddCalcu={ddCalcu}&sv=10004&ct=android'
-        return new_url
-        
-    except Exception as e:
-        return url
+def getddCalcu720p(url, pID):
+    puData = url.split("&puData=")[1]
+    keys = "cdabyzwxkl"
+    ddCalcu = []
+    for i in range(0, int(len(puData) / 2)):
+        ddCalcu.append(puData[int(len(puData)) - i - 1])
+        ddCalcu.append(puData[i])
+        if i == 1:
+            ddCalcu.append("v")
+        if i == 2:
+            ddCalcu.append(keys[int(format_date_ymd()[2])])
+        if i == 3:
+            ddCalcu.append(keys[int(pID[6])])
+        if i == 4:
+            ddCalcu.append("a")
+    return f'{url}&ddCalcu={"".join(ddCalcu)}&sv=10004&ct=android'
 
-def smart_getddCalcu720p(url, pID):
-    """
-    智能修复主函数：尝试多种算法，返回第一个有效的
-    """
-    if not url or "&puData=" not in url:
-        return url
-    
-    # 尝试的算法列表
-    algorithms = [
-        getddCalcu720p_fix1,
-        getddCalcu720p_fix2,
-        getddCalcu720p_fix3,
-    ]
-    
-    # 先检查原始URL是否可用
-    try:
-        response = requests.head(url, timeout=3, allow_redirects=True)
-        if response.status_code < 400:
-            return url
-    except:
-        pass
-    
-    # 尝试每种算法
-    for algo_func in algorithms:
-        try:
-            fixed_url = algo_func(url, pID)
-            response = requests.head(fixed_url, timeout=3, allow_redirects=True)
-            if response.status_code < 400:
-                return fixed_url
-        except Exception:
-            continue
-    
-    # 如果所有算法都失败，尝试降级到480P
-    if "rateType=3" in url:
-        if "&ddCalcu=" in url:
-            base_url = url.split("&ddCalcu=")[0]
-        else:
-            base_url = url
-            
-        if "rateType=3" in base_url:
-            fallback_url = base_url.replace("rateType=3", "rateType=2")
-            return fallback_url
-    
-    # 最后手段：返回不带ddCalcu的URL
-    if "&ddCalcu=" in url:
-        base_url = url.split("&ddCalcu=")[0]
-        return base_url
-    
-    return url
-
-########## 修复部分结束 ##########
 
 def append_All_Live(live, flag, data):
     try:
         respData = get_content(data["pID"])
-        
-        playurl_resp = respData.get("body", {}).get("urlInfo", {}).get("url", "")
-        if playurl_resp:
-            playurl = smart_getddCalcu720p(playurl_resp, data["pID"])
-        else:
-            playurl = playurl_resp
-        
-        if not playurl:
-            return
-            
-        z = 1
-        while z <= 6:
-            try:
-                obj = requests.get(playurl, allow_redirects=False, timeout=5)
-                if obj.status_code == 302:
-                    location = obj.headers.get("Location", "")
-                    if location and location.startswith("http://hlsz"):
-                        playurl = location
-                        break
-                if z == 6:
+        # print(respData)
+        playurl = getddCalcu720p(respData["body"]["urlInfo"]["url"], data["pID"])
+        # print(playurl)
+
+        if playurl != "":
+            z = 1
+            while z <= 6:
+                obj = requests.get(playurl, allow_redirects=False)
+                location = obj.headers["Location"]
+                if location == "" or location is None:
+                    continue
+                if location.startswith("http://hlsz"):
+                    playurl = location
                     break
-                time.sleep(0.15)
+                if z <= 6:
+                    time.sleep(0.15)
                 z += 1
-            except Exception as e:
-                break
-        
-        if z <= 6 and playurl:
-            channel_name = data.get("name") or data.get("title") or "未知频道"
-            channel_logo = ""
-            if data.get("pics"):
-                channel_logo = data["pics"].get("highResolutionH") or data["pics"].get("highResolutionV") or ""
-            
-            content = f'#EXTINF:-1 tvg-id="{channel_name}" tvg-name="{channel_name}" tvg-logo="{channel_logo}" group-title="{live}",{channel_name}\n{playurl}\n'
+        content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{data["pics"]["highResolutionH"]}" group-title="{live}",{data["name"]}\n{playurl}\n'
+        if z == 7:
+            print(f'频道 [{data["name"]}] 更新失败！')
+        else:
             All_Live[flag] = content
-            print(f'✓ {live}: {channel_name}')
-            return
-        
+            print(f'频道 [{data["name"]}] 更新成功！')
     except Exception as e:
-        pass
+        print(f'频道 [{data["name"]}] 更新失败！')
+        print(f"ERROR:{e}")
 
-def thread_task(live, data):
-    flag = 0
-    for item in data:
-        flag += 1
-        if item.get("pID"):
-            append_All_Live(live, flag, item)
+def update(live, url):
+    global FLAG
+    global All_Live
+    global headers
+    pool = ThreadPoolExecutor(thread_mum)  # 多线程申请
+    response = requests.get(url, headers=headers).json()
+    dataList = response["body"]["dataList"]
+    for flag, data in enumerate(dataList):
+        All_Live.append("")
+        pool.submit(append_All_Live, live, FLAG + flag, data)
+    pool.shutdown()  # 结束线程
+    FLAG += len(dataList)
 
-def writefile(path, content):
-    with open(path, 'a', encoding='utf-8') as f:
-        f.write(content)
+
 
 def main():
-    writefile(path, '#EXTM3U\n')
-    
-    # 使用未登录状态下的咪咕视频分类
-    # 参考原GitHub项目的分类设置
-    categories = [
-        {"name": "央视", "vomsID": "1ff892f2b5ab4a79be6e25b69d2f5d05"},
-        {"name": "卫视", "vomsID": "0847b3f6c08a4ca28f85ba5701268424"},
-        {"name": "地方", "vomsID": "c7d7ed30e0dd4a2abe5a6c5bb7c8f9a3"},  # 更新为最新vomsID
-        {"name": "体育", "vomsID": "7538163cdac044398cb292ecf75db4e0"},
-        {"name": "影视", "vomsID": "a28ccb4e9d404e3b9a7b2af7bb3a4b1c"},
-        {"name": "综艺", "vomsID": "b39ccb4e9d404e3b9a7b2af7bb3a4b1d"},
-        {"name": "少儿", "vomsID": "f8c9d5e6f7a8b9c0d1e2f3a4b5c6d7e8"},  # 更新为最新vomsID
-        {"name": "新闻", "vomsID": "d59ccb4e9d404e3b9a7b2af7bb3a4b1f"},
-        {"name": "教育", "vomsID": "e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1"},  # 新增
-        {"name": "熊猫", "vomsID": "f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2"},  # 新增
-        {"name": "纪实", "vomsID": "a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3"},  # 新增
-    ]
-    
-    print(f"使用默认 {len(categories)} 个分类")
-    
-    # 处理每个分类
-    for category in categories:
-        category_name = category.get("name", "未命名")
-        vomsID = category.get("vomsID")
-        
-        if not vomsID:
-            continue
-            
-        print(f"\n开始直播分类 ----- [{category_name}] -----")
-        
-        # 直接调用直播列表API
-        try:
-            # 使用咪咕官网的直播列表API (2025年1月可用的)
-            api_url = f"https://program-sc.miguvideo.com/live/v2/live-channel-list/{vomsID}/1/100"
-            print(f"API URL: {api_url}")
-            
-            response = requests.get(api_url, headers={
-                **headers,
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
-            }, timeout=10)
-            
-            if response.status_code != 200:
-                print(f"API请求失败: {response.status_code}")
-                continue
-                
-            data = response.json()
-            print(f"API响应: {json.dumps(data, ensure_ascii=False)[:150]}...")
-            
-            if data.get("code") != 200:
-                print(f"API返回错误: {data.get('message')}")
-                continue
-            
-            # 解析频道列表
-            channels = []
-            body = data.get("body", {})
-            
-            # 尝试多种可能的字段
-            for key in ["channelList", "list", "data", "channels"]:
-                if key in body:
-                    channels = body[key]
-                    break
-            
-            if not isinstance(channels, list):
-                print(f"未能获取频道列表，body类型: {type(body)}")
-                continue
-                
-            print(f"分类 [{category_name}] 获取到 {len(channels)} 个频道")
-            
-            # 处理频道
-            valid_channels = []
-            for channel in channels:
-                if isinstance(channel, dict):
-                    # 获取pID（可能有不同的字段名）
-                    pID = (channel.get("pID") or 
-                          channel.get("programId") or 
-                          channel.get("contId") or 
-                          channel.get("id"))
-                    
-                    if pID:
-                        # 确保有必要的字段
-                        channel_copy = channel.copy()
-                        channel_copy["pID"] = str(pID)
-                        
-                        # 频道名称
-                        if not channel_copy.get("name"):
-                            channel_copy["name"] = (channel.get("title") or 
-                                                   channel.get("programName") or 
-                                                   channel.get("name") or 
-                                                   "未知频道")
-                        
-                        # 频道logo
-                        if not channel_copy.get("pics"):
-                            # 尝试不同的logo字段
-                            logo_url = (channel.get("imageUrl") or 
-                                       channel.get("image") or 
-                                       channel.get("logoUrl") or 
-                                       channel.get("pic") or "")
-                            
-                            channel_copy["pics"] = {
-                                "highResolutionH": logo_url,
-                                "highResolutionV": logo_url
-                            }
-                        
-                        valid_channels.append(channel_copy)
-            
-            print(f"分类 [{category_name}] 有效频道数: {len(valid_channels)}")
-            
-            if valid_channels:
-                # 线程处理
-                with ThreadPoolExecutor(max_workers=thread_mum) as executor:
-                    futures = []
-                    for i in range(0, len(valid_channels), thread_mum):
-                        batch = valid_channels[i:i + thread_mum]
-                        future = executor.submit(thread_task, category_name, batch)
-                        futures.append(future)
-                    
-                    for future in futures:
-                        future.result()
-            else:
-                print(f"分类 [{category_name}] 没有有效的频道")
-            
-        except Exception as e:
-            print(f"处理分类 [{category_name}] 失败: {str(e)}")
-    
-    # 写文件
-    total_channels = len(All_Live)
-    if total_channels > 0:
-        for key, value in sorted(All_Live.items()):
-            writefile(path, value)
-        print(f'\n✓ 更新完成，共获取 {total_channels} 个频道，写入文件 {path}')
-    else:
-        # 如果API不工作，使用备用的已知频道
-        print(f'\n✗ API未能获取频道，使用备用频道')
-        
-        # 添加一些已知的咪咕直播频道作为备用
-        backup_channels = [
-            {"pID": "704740003", "name": "CCTV-1", "category": "央视"},
-            {"pID": "704740001", "name": "CCTV-5", "category": "体育"},
-            {"pID": "704740002", "name": "CCTV-6", "category": "影视"},
-            {"pID": "1000000001", "name": "湖南卫视", "category": "卫视"},
-            {"pID": "1000000002", "name": "浙江卫视", "category": "卫视"},
-        ]
-        
-        for idx, channel in enumerate(backup_channels, 1):
-            category_name = channel.get("category", "其他")
-            channel_name = channel.get("name", "未知频道")
-            
-            # 尝试获取播放地址
-            try:
-                respData = get_content(channel["pID"])
-                playurl_resp = respData.get("body", {}).get("urlInfo", {}).get("url", "")
-                
-                if playurl_resp:
-                    playurl = smart_getddCalcu720p(playurl_resp, channel["pID"])
-                    
-                    if playurl:
-                        # 尝试重定向
-                        for _ in range(3):
-                            try:
-                                obj = requests.get(playurl, allow_redirects=False, timeout=5)
-                                if obj.status_code == 302:
-                                    location = obj.headers.get("Location", "")
-                                    if location and location.startswith("http://hlsz"):
-                                        playurl = location
-                                        break
-                            except:
-                                break
-                            time.sleep(0.1)
-                        
-                        content = f'#EXTINF:-1 tvg-id="{channel_name}" tvg-name="{channel_name}" tvg-logo="" group-title="{category_name}",{channel_name}\n{playurl}\n'
-                        All_Live[idx] = content
-                        print(f'✓ {category_name}: {channel_name}')
-            except:
-                continue
-        
-        # 写入备用频道
-        if All_Live:
-            for key, value in sorted(All_Live.items()):
-                writefile(path, value)
-            print(f'✓ 备用频道更新完成，共获取 {len(All_Live)} 个频道，写入文件 {path}')
-        else:
-            print(f'✗ 完全无法获取任何频道')
+    writefile(path,
+              '#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/epg.xml" catchup="append" catchup-source="&playbackbegin=\${(b)yyyyMMddHHmmss}&playbackend=\${(e)yyyyMMddHHmmss}"\n')
 
-if __name__ == '__main__':
+    for live in lives:
+        print(f"分类 ----- [{live}] ----- 开始更新. . .")
+        url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{LIVE[live]}'
+        update(live, url)
+
+    for content in All_Live:
+        appendfile(path, content)
+
+
+if __name__ == "__main__":
     main()
