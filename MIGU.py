@@ -111,7 +111,7 @@ def get_content(pid):
         "Referrer-Policy": "strict-origin-when-cross-origin"
     }
     result = getSaltAndSign(pid)
-    rateType = "3" if pid == "608831231" else "3"  # 广东卫视有些特殊
+    mrateType = "3" if pid == "608831231" else "3"  # 广东卫视有些特殊
     URL = f"https://play.miguvideo.com/playurl/v1/play/playurl?sign={result['sign']}&rateType={rateType}&contId={pid}&timestamp={result['timestamp']}&salt={result['salt']}"
     params = URL.split("?")[1].split("&")
     body = {
