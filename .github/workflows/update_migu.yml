@@ -3,7 +3,7 @@ name: update咪咕
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0/1 * * *'
+    - cron: '10 0/1 * * *'
 
 jobs:
   run:
