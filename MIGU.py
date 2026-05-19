@@ -43,10 +43,6 @@ FLAG = 0
 
 
 def format_date_ymd():
-    """
-    格式化日期为「年+补0月+补0日」字符串（对应JS逻辑）
-    :return: 如"20251216"
-    """
     current_date = datetime.now()
     return f"{current_date.year}{current_date.month:02d}{current_date.day:02d}"
 
@@ -62,7 +58,6 @@ def appendfile(path, content):
 
 
 def md5(text):
-    """MD5加密：返回32位小写结果"""
     md5_obj = hashlib.md5()
     md5_obj.update(text.encode('utf-8'))
     return md5_obj.hexdigest()
@@ -84,166 +79,172 @@ def getSaltAndSign(pid):
 
 def get_content(pid):
     result = getSaltAndSign(pid)
-    rateType = "3" if pid == "608831231" else "3"
+    rateType = "3"  # 统一使用3（720p）
     URL = f"https://play.miguvideo.com/playurl/v1/play/playurl?sign={result['sign']}&rateType={rateType}&contId={pid}&timestamp={result['timestamp']}&salt={result['salt']}"
     
-    # 简化请求头，使用原始的headers
+    # 使用精简请求头，避免被拦截
     req_headers = {
         "User-Agent": headers["User-Agent"],
-        "Accept": "application/json, text/plain, */*",
+        "Accept": "application/json",
         "appCode": headers["appCode"],
         "appId": headers["appId"],
         "channel": headers["channel"],
         "terminalId": headers["terminalId"],
         "Referer": "https://m.miguvideo.com/"
     }
-    
     try:
         resp = requests.get(URL, headers=req_headers, timeout=10)
-        return resp.json()
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            print(f"get_content 状态码异常: {resp.status_code}")
+            return None
     except Exception as e:
-        print(f"请求异常: {e}")
+        print(f"get_content 请求异常: {e}")
         return None
 
 
 def getddCalcu720p(url, pID):
-    """修复后的ddCalcu计算函数"""
+    """
+    修复版：正确生成 ddCalcu 参数
+    """
     try:
-        # 提取puData参数
+        # 提取 puData
         if "&puData=" not in url:
             return url
+        parts = url.split("&puData=")
+        base = parts[0]
+        puData_part = parts[1]
+        # puData 可能还包含其他参数，只取 & 之前的部分
+        if "&" in puData_part:
+            puData = puData_part.split("&")[0]
+        else:
+            puData = puData_part
         
-        puData = url.split("&puData=")[1]
-        # 如果puData包含其他参数，只取前面的部分
-        if "&" in puData:
-            puData = puData.split("&")[0]
+        if not puData:
+            return url
         
         keys = "cdabyzwxkl"
         ddCalcu = []
-        puData_len = len(puData)
-        
-        # 修复：正确处理循环逻辑
-        for i in range(puData_len // 2):
-            if i < puData_len:
-                ddCalcu.append(puData[puData_len - i - 1])
-            if i < puData_len:
-                ddCalcu.append(puData[i])
+        length = len(puData)
+        # 按照原 JS 逻辑：遍历前 length/2 次，每次取对称位置的两个字符
+        for i in range(length // 2):
+            # 取对称的两个字符（从外向内）
+            ddCalcu.append(puData[length - 1 - i])
+            ddCalcu.append(puData[i])
             if i == 1:
                 ddCalcu.append("v")
             if i == 2:
-                # 获取日期字符串的第3个字符（索引2）
-                date_str = format_date_ymd()
-                if len(date_str) > 2:
-                    ddCalcu.append(keys[int(date_str[2]) % len(keys)])
+                # 取日期第3个字符（索引2）
+                day_char = format_date_ymd()[2]
+                index = int(day_char) % len(keys)
+                ddCalcu.append(keys[index])
             if i == 3:
-                if len(pID) > 6:
-                    ddCalcu.append(keys[int(pID[6]) % len(keys)])
+                # 取 pID 的第7个字符（索引6）
+                pid_char = pID[6] if len(pID) > 6 else "0"
+                index = int(pid_char) % len(keys)
+                ddCalcu.append(keys[index])
             if i == 4:
                 ddCalcu.append("a")
         
-        # 移除URL中的原puData参数，添加新的ddCalcu
-        base_url = url.split("&puData=")[0]
-        return f'{base_url}&ddCalcu={"".join(ddCalcu)}&sv=10004&ct=android'
-    
+        # 重新组装 URL
+        new_url = f"{base}&ddCalcu={''.join(ddCalcu)}&sv=10004&ct=android"
+        # 如果原 URL 中 puData 后面还有其它参数，需要保留
+        if "&" in parts[1]:
+            remaining = "&" + parts[1].split("&", 1)[1]
+            new_url += remaining
+        return new_url
     except Exception as e:
-        print(f"ddCalcu计算错误: {e}")
+        print(f"getddCalcu720p 错误: {e}")
         return url
 
 
 def append_All_Live(live, flag, data):
     try:
-        # 修复：获取正确的pID
+        # 获取正确的 contId
         pID = data.get("contId") or data.get("pID")
         if not pID:
-            print(f'频道 [{data.get("name", "未知")}] 没有contId，跳过')
+            print(f'频道 [{data.get("name", "未知")}] 无 contId，跳过')
             return
         
         respData = get_content(pID)
-        
         if not respData or "body" not in respData or "urlInfo" not in respData["body"]:
-            print(f'频道 [{data["name"]}] 获取流地址失败！')
+            print(f'频道 [{data["name"]}] 获取 playurl 失败')
             return
         
-        playurl = respData["body"]["urlInfo"]["url"]
+        raw_url = respData["body"]["urlInfo"]["url"]
+        if not raw_url:
+            print(f'频道 [{data["name"]}] 返回的 url 为空')
+            return
         
-        # 计算ddCalcu
-        playurl = getddCalcu720p(playurl, pID)
+        # 生成带 ddCalcu 的地址
+        playurl = getddCalcu720p(raw_url, pID)
         
-        if playurl:
-            z = 1
-            location = ""
-            while z <= 6:
-                try:
-                    obj = requests.get(playurl, headers=headers, allow_redirects=False, timeout=10)
-                    if obj.status_code in [301, 302] and "Location" in obj.headers:
-                        location = obj.headers["Location"]
-                        if location and (location.startswith("http://hlsz") or location.endswith(".m3u8")):
-                            playurl = location
+        # 重定向解析，直到拿到真实 m3u8
+        final_url = None
+        for attempt in range(6):
+            try:
+                resp = requests.get(playurl, headers=headers, allow_redirects=False, timeout=10)
+                if resp.status_code in (301, 302):
+                    location = resp.headers.get("Location")
+                    if location:
+                        # 如果已经是 m3u8 或者 hls 地址，直接使用
+                        if location.endswith('.m3u8') or 'hls' in location:
+                            final_url = location
                             break
-                    time.sleep(0.15)
-                except Exception as e:
-                    pass
-                z += 1
-            
-            if z == 7:
-                print(f'频道 [{data["name"]}] 更新失败！')
-            else:
-                # 获取频道图标
-                logo = ""
-                if "pics" in data:
-                    logo = data["pics"].get("highResolutionH", "")
-                
-                content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{logo}" group-title="{live}",{data["name"]}\n{playurl}\n'
-                All_Live[flag] = content
-                print(f'频道 [{data["name"]}] 更新成功！')
+                        else:
+                            playurl = location
+                            continue
+                else:
+                    # 非重定向响应，检查内容是否为 m3u8
+                    if resp.status_code == 200 and '#EXTM3U' in resp.text:
+                        final_url = playurl
+                        break
+            except Exception:
+                pass
+            time.sleep(0.15)
+        
+        if final_url:
+            logo = data.get("pics", {}).get("highResolutionH", "")
+            content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{logo}" group-title="{live}",{data["name"]}\n{final_url}\n'
+            All_Live[flag] = content
+            print(f'频道 [{data["name"]}] 更新成功！')
         else:
-            print(f'频道 [{data["name"]}] 更新失败！')
-            
+            print(f'频道 [{data["name"]}] 重定向解析失败')
     except Exception as e:
-        print(f'频道 [{data["name"]}] 更新失败！')
-        print(f"ERROR:{e}")
+        print(f'频道 [{data["name"]}] 更新异常: {e}')
 
 
 def update(live, url):
-    global FLAG
-    global All_Live
-    global headers
-    
+    global FLAG, All_Live
     pool = ThreadPoolExecutor(thread_mum)
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
         data = response.json()
-        
-        if "body" in data and "dataList" in data["body"]:
-            dataList = data["body"]["dataList"]
-            # 预分配列表空间
-            All_Live.extend([""] * len(dataList))
-            
-            for flag, channel_data in enumerate(dataList):
-                pool.submit(append_All_Live, live, FLAG + flag, channel_data)
-            
-            pool.shutdown(wait=True)
-            FLAG += len(dataList)
-        else:
-            print(f"分类 [{live}] 数据格式错误")
-            
+        dataList = data.get("body", {}).get("dataList", [])
+        if not dataList:
+            print(f"分类 [{live}] 无频道数据")
+            return
+        # 预扩展列表
+        All_Live.extend([""] * len(dataList))
+        for idx, ch in enumerate(dataList):
+            pool.submit(append_All_Live, live, FLAG + idx, ch)
+        pool.shutdown(wait=True)
+        FLAG += len(dataList)
     except Exception as e:
-        print(f"更新分类 [{live}] 失败: {e}")
+        print(f"分类 [{live}] 更新失败: {e}")
         pool.shutdown(wait=False)
 
 
 def main():
     writefile(path,
               '#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/epg.xml" catchup="append" catchup-source="&playbackbegin=${(b)yyyyMMddHHmmss}&playbackend=${(e)yyyyMMddHHmmss}"\n')
-
     for live in lives:
         print(f"分类 ----- [{live}] ----- 开始更新. . .")
         url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{LIVE[live]}'
         update(live, url)
-
     for content in All_Live:
-        if content:  # 只写入成功的内容
+        if content:
             appendfile(path, content)
 
 
