@@ -3,11 +3,10 @@ import json
 import time
 import random
 import hashlib
-import traceback
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-thread_mum = 5  # 降低线程数便于调试
+thread_mum = 10  # 线程
 headers = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
@@ -44,6 +43,10 @@ FLAG = 0
 
 
 def format_date_ymd():
+    """
+    格式化日期为「年+补0月+补0日」字符串（对应JS逻辑）
+    :return: 如"20251216"
+    """
     current_date = datetime.now()
     return f"{current_date.year}{current_date.month:02d}{current_date.day:02d}"
 
@@ -59,8 +62,12 @@ def appendfile(path, content):
 
 
 def md5(text):
+    """MD5加密：返回32位小写结果"""
+    # 创建MD5对象
     md5_obj = hashlib.md5()
+    # 更新加密内容（需转字节流）
     md5_obj.update(text.encode('utf-8'))
+    # 获取16进制加密结果
     return md5_obj.hexdigest()
 
 
@@ -79,161 +86,363 @@ def getSaltAndSign(pid):
 
 
 def get_content(pid):
-    result = getSaltAndSign(pid)
-    rateType = "3"
-    URL = f"https://play.miguvideo.com/playurl/v1/play/playurl?sign={result['sign']}&rateType={rateType}&contId={pid}&timestamp={result['timestamp']}&salt={result['salt']}"
-    
-    req_headers = {
-        "User-Agent": headers["User-Agent"],
-        "Accept": "application/json",
-        "appCode": headers["appCode"],
-        "appId": headers["appId"],
-        "channel": headers["channel"],
-        "terminalId": headers["terminalId"],
-        "Referer": "https://m.miguvideo.com/"
+    _headers = {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "apipost-client-id": "465aea51-4548-495a-8709-7e532dbe3703",
+        "apipost-language": "zh-cn",
+        "apipost-machine": "3a214a07786002",
+        "apipost-platform": "Win",
+        "apipost-terminal": "web",
+        "apipost-token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4",
+        "apipost-version": "8.2.6",
+        "cache-control": "no-cache",
+        "content-type": "application/json",
+        "pragma": "no-cache",
+        "priority": "u=1, i",
+        "sec-ch-ua": '"Chromium";v="136", "Microsoft Edge";v="136", "Not.A/Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "cookie": "apipost-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXlsb2FkIjp7InVzZXJfaWQiOjM5NDY2NDM3MTIyMzAwMzEzNywidGltZSI6MTc2NTYzMjU2NSwidXVpZCI6ImJlNDJjOTMxLWQ4MjctMTFmMC1hNThiLTUyZTY1ODM4NDNhOSJ9fQ.QU0RXa0e-yB-fwJNjYt_OnyM6RteY3L1BaUWqCrdAB4; SERVERID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691; SERVERCORSID=236fe4f21bf23223c449a2ac2dc20aa4|1765632725|1765632691",
+        "Referer": "https://workspace.apipost.net/57a21612a051000/apis",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
     }
-    try:
-        resp = requests.get(URL, headers=req_headers, timeout=10)
-        if resp.status_code == 200:
-            return resp.json()
-        else:
-            print(f"get_content 状态码异常: {resp.status_code}, 响应: {resp.text[:200]}")
-            return None
-    except Exception as e:
-        print(f"get_content 请求异常: {e}")
-        return None
+    result = getSaltAndSign(pid)
+    rateType = "3" if pid == "608831231" else "3"  # 广东卫视有些特殊
+    URL = f"https://play.miguvideo.com/playurl/v1/play/playurl?sign={result['sign']}&rateType={rateType}&contId={pid}&timestamp={result['timestamp']}&salt={result['salt']}"
+    params = URL.split("?")[1].split("&")
+    body = {
+        "option": {
+            "scene": "http_request",
+            "lang": "zh-cn",
+            "globals": {},
+            "project": {
+                "request": {
+                    "header": {
+                        "parameter": [
+                            {
+                                "key": "Accept",
+                                "value": "*/*",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            },
+                            {
+                                "key": "Accept-Encoding",
+                                "value": "gzip, deflate, br",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            },
+                            {
+                                "key": "User-Agent",
+                                "value": "PostmanRuntime-ApipostRuntime/1.1.0",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            },
+                            {
+                                "key": "Connection",
+                                "value": "keep-alive",
+                                "is_checked": 1,
+                                "field_type": "String",
+                                "is_system": 1
+                            }
+                        ]
+                    },
+                    "query": {
+                        "parameter": []
+                    },
+                    "body": {
+                        "parameter": []
+                    },
+                    "cookie": {
+                        "parameter": []
+                    },
+                    "auth": {
+                        "type": "noauth"
+                    },
+                    "pre_tasks": [],
+                    "post_tasks": []
+                }
+            },
+            "env": {
+                "env_id": "1",
+                "env_name": "默认环境",
+                "env_pre_url": "",
+                "env_pre_urls": {
+                    "1": {
+                        "server_id": "1",
+                        "name": "默认服务",
+                        "sort": 1000,
+                        "uri": ""
+                    },
+                    "default": {
+                        "server_id": "1",
+                        "name": "默认服务",
+                        "sort": 1000,
+                        "uri": ""
+                    }
+                },
+                "environment": {}
+            },
+            "cookies": {
+                "switch": 1,
+                "data": []
+            },
+            "system_configs": {
+                "send_timeout": 0,
+                "auto_redirect": -1,
+                "max_redirect_time": 5,
+                "auto_gen_mock_url": -1,
+                "request_param_auto_json": -1,
+                "proxy": {
+                    "type": 2,
+                    "envfirst": 1,
+                    "bypass": [],
+                    "protocols": [
+                        "http"
+                    ],
+                    "auth": {
+                        "authenticate": -1,
+                        "host": "",
+                        "username": "",
+                        "password": ""
+                    }
+                },
+                "ca_cert": {
+                    "open": -1,
+                    "path": "",
+                    "base64": ""
+                },
+                "client_cert": {}
+            },
+            "custom_functions": {},
+            "collection": [
+                {
+                    "target_id": "3c5fd6a9786002",
+                    "target_type": "api",
+                    "parent_id": "0",
+                    "name": "MIGU",
+                    "request": {
+                        "auth": {
+                            "type": "inherit"
+                        },
+                        "body": {
+                            "mode": "None",
+                            "parameter": [],
+                            "raw": "",
+                            "raw_parameter": [],
+                            "raw_schema": {
+                                "type": "object"
+                            },
+                            "binary": None
+                        },
+                        "pre_tasks": [],
+                        "post_tasks": [],
+                        "header": {
+                            "parameter": [
+                                {
+                                    "description": "",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": " AppVersion",
+                                    "value": "2600034600",
+                                    "not_None": 1,
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "param_id": "3c60653273e0b3"
+                                },
+                                {
+                                    "description": "",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "TerminalId",
+                                    "value": "android",
+                                    "not_None": 1,
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "param_id": "3c6075c1f3e0e1"
+                                },
+                                {
+                                    "description": "",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "X-UP-CLIENT-CHANNEL-ID",
+                                    "value": "2600034600-99000-201600010010028",
+                                    "not_None": 1,
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "param_id": "3c60858bb3e10c"
+                                }
+                            ]
+                        },
+                        "query": {
+                            "parameter": [
+                                {
+                                    "param_id": "3c5fd74233e004",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "sign",
+                                    "not_None": 1,
+                                    "value": params[0].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c6022f433e030",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "rateType",
+                                    "not_None": 1,
+                                    "value": params[1].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c60354133e05b",
+                                    "field_type": "string",
+                                    "is_checked": 1,
+                                    "key": "contId",
+                                    "not_None": 1,
+                                    "value": params[2].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c605e4bf860b1",
+                                    "field_type": "String",
+                                    "is_checked": 1,
+                                    "key": "timestamp",
+                                    "not_None": 1,
+                                    "value": params[3].split("=")[1],
+                                    "description": ""
+                                },
+                                {
+                                    "param_id": "3c605e4c3860b2",
+                                    "field_type": "String",
+                                    "is_checked": 1,
+                                    "key": "salt",
+                                    "not_None": 1,
+                                    "value": params[4].split("=")[1],
+                                    "description": ""
+                                }
+                            ],
+                            "query_add_equal": 1
+                        },
+                        "cookie": {
+                            "parameter": [],
+                            "cookie_encode": 1
+                        },
+                        "restful": {
+                            "parameter": []
+                        },
+                        "tabs_default_active_key": "query"
+                    },
+                    "parents": [],
+                    "method": "POST",
+                    "protocol": "http/1.1",
+                    "url": URL,
+                    "pre_url": ""
+                }
+            ],
+            "database_configs": {}
+        },
+        "test_events": [
+            {
+                "type": "api",
+                "data": {
+                    "target_id": "3c5fd6a9786002",
+                    "project_id": "57a21612a051000",
+                    "parent_id": "0",
+                    "target_type": "api"
+                }
+            }
+        ]
+    }
+    body = json.dumps(body, separators=(",", ":"))
+    url = "https://workspace.apipost.net/proxy/v2/http"
+    resp = requests.post(url, headers=_headers, data=body).json()
+    return json.loads(resp["data"]["data"]["response"]["body"])
 
 
 def getddCalcu720p(url, pID):
-    try:
-        if "&puData=" not in url:
-            return url
-        parts = url.split("&puData=")
-        base = parts[0]
-        puData_part = parts[1]
-        if "&" in puData_part:
-            puData = puData_part.split("&")[0]
-        else:
-            puData = puData_part
-        if not puData:
-            return url
-        
-        keys = "cdabyzwxkl"
-        ddCalcu = []
-        length = len(puData)
-        for i in range(length // 2):
-            ddCalcu.append(puData[length - 1 - i])
-            ddCalcu.append(puData[i])
-            if i == 1:
-                ddCalcu.append("v")
-            if i == 2:
-                day_char = format_date_ymd()[2]
-                index = int(day_char) % len(keys)
-                ddCalcu.append(keys[index])
-            if i == 3:
-                if len(pID) > 6:
-                    pid_char = pID[6]
-                else:
-                    pid_char = "0"
-                index = int(pid_char) % len(keys)
-                ddCalcu.append(keys[index])
-            if i == 4:
-                ddCalcu.append("a")
-        new_url = f"{base}&ddCalcu={''.join(ddCalcu)}&sv=10004&ct=android"
-        if "&" in parts[1]:
-            remaining = "&" + parts[1].split("&", 1)[1]
-            new_url += remaining
-        return new_url
-    except Exception as e:
-        print(f"getddCalcu720p 错误: {e}\n{traceback.format_exc()}")
-        return url
+    puData = url.split("&puData=")[1]
+    keys = "cdabyzwxkl"
+    ddCalcu = []
+    for i in range(0, int(len(puData) / 2)):
+        ddCalcu.append(puData[int(len(puData)) - i - 1])
+        ddCalcu.append(puData[i])
+        if i == 1:
+            ddCalcu.append("v")
+        if i == 2:
+            ddCalcu.append(keys[int(format_date_ymd()[2])])
+        if i == 3:
+            ddCalcu.append(keys[int(pID[6])])
+        if i == 4:
+            ddCalcu.append("a")
+    return f'{url}&ddCalcu={"".join(ddCalcu)}&sv=10004&ct=android'
 
 
 def append_All_Live(live, flag, data):
     try:
-        pID = data.get("contId") or data.get("pID")
-        if not pID:
-            print(f'频道 [{data.get("name", "未知")}] 无 contId，跳过')
-            return
-        
-        respData = get_content(pID)
-        if not respData or "body" not in respData or "urlInfo" not in respData["body"]:
-            print(f'频道 [{data["name"]}] 获取 playurl 失败，respData={respData}')
-            return
-        
-        raw_url = respData["body"]["urlInfo"]["url"]
-        if not raw_url:
-            print(f'频道 [{data["name"]}] 返回的 url 为空')
-            return
-        
-        playurl = getddCalcu720p(raw_url, pID)
-        print(f"调试: {data['name']} 原始URL: {raw_url[:100]}")
-        print(f"调试: 处理后URL: {playurl[:100]}")
-        
-        final_url = None
-        for attempt in range(6):
-            try:
-                resp = requests.get(playurl, headers=headers, allow_redirects=False, timeout=10)
-                print(f"重定向尝试 {attempt+1}: 状态码={resp.status_code}")
-                if resp.status_code in (301, 302):
-                    location = resp.headers.get("Location")
-                    if location:
-                        print(f"  重定向到: {location[:100]}")
-                        if location.endswith('.m3u8') or 'hls' in location:
-                            final_url = location
-                            break
-                        else:
-                            playurl = location
-                            continue
-                else:
-                    if resp.status_code == 200 and '#EXTM3U' in resp.text:
-                        final_url = playurl
-                        break
-            except Exception as e:
-                print(f"  请求异常: {e}")
-            time.sleep(0.15)
-        
-        if final_url:
-            logo = data.get("pics", {}).get("highResolutionH", "")
-            content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{logo}" group-title="{live}",{data["name"]}\n{final_url}\n'
+        respData = get_content(data["pID"])
+        # print(respData)
+        playurl = getddCalcu720p(respData["body"]["urlInfo"]["url"], data["pID"])
+        # print(playurl)
+
+        if playurl != "":
+            z = 1
+            while z <= 6:
+                obj = requests.get(playurl, allow_redirects=False)
+                location = obj.headers["Location"]
+                if location == "" or location is None:
+                    continue
+                if location.startswith("http://hlsz"):
+                    playurl = location
+                    break
+                if z <= 6:
+                    time.sleep(0.15)
+                z += 1
+        content = f'#EXTINF:-1 tvg-id="{data["name"]}" tvg-name="{data["name"]}" tvg-logo="{data["pics"]["highResolutionH"]}" group-title="{live}",{data["name"]}\n{playurl}\n'
+        if z == 7:
+            print(f'频道 [{data["name"]}] 更新失败！')
+        else:
             All_Live[flag] = content
             print(f'频道 [{data["name"]}] 更新成功！')
-        else:
-            print(f'频道 [{data["name"]}] 重定向解析失败')
     except Exception as e:
-        print(f'频道 [{data["name"]}] 更新异常: {e}\n{traceback.format_exc()}')
-
+        print(f'频道 [{data["name"]}] 更新失败！')
+        print(f"ERROR:{e}")
 
 def update(live, url):
-    global FLAG, All_Live
-    pool = ThreadPoolExecutor(thread_mum)
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        data = response.json()
-        dataList = data.get("body", {}).get("dataList", [])
-        if not dataList:
-            print(f"分类 [{live}] 无频道数据，响应内容: {data}")
-            return
-        All_Live.extend([""] * len(dataList))
-        for idx, ch in enumerate(dataList):
-            pool.submit(append_All_Live, live, FLAG + idx, ch)
-        pool.shutdown(wait=True)
-        FLAG += len(dataList)
-    except Exception as e:
-        print(f"分类 [{live}] 更新失败: {e}\n{traceback.format_exc()}")
-        pool.shutdown(wait=False)
+    global FLAG
+    global All_Live
+    global headers
+    pool = ThreadPoolExecutor(thread_mum)  # 多线程申请
+    response = requests.get(url, headers=headers).json()
+    dataList = response["body"]["dataList"]
+    for flag, data in enumerate(dataList):
+        All_Live.append("")
+        pool.submit(append_All_Live, live, FLAG + flag, data)
+    pool.shutdown()  # 结束线程
+    FLAG += len(dataList)
+
 
 
 def main():
     writefile(path,
-              '#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/epg.xml" catchup="append" catchup-source="&playbackbegin=${(b)yyyyMMddHHmmss}&playbackend=${(e)yyyyMMddHHmmss}"\n')
+              '#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/epg.xml" catchup="append" catchup-source="&playbackbegin=\${(b)yyyyMMddHHmmss}&playbackend=\${(e)yyyyMMddHHmmss}"\n')
+
     for live in lives:
         print(f"分类 ----- [{live}] ----- 开始更新. . .")
         url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{LIVE[live]}'
         update(live, url)
+
     for content in All_Live:
-        if content:
-            appendfile(path, content)
+        appendfile(path, content)
 
 
 if __name__ == "__main__":
