@@ -6,12 +6,13 @@ import hashlib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ================= 配置核心参数 =================
-THREAD_NUM = 15  # 线程数（全频道较多，适当提高）
-OUTPUT_PATH = 'migu_all_channels.txt'
+# ================= 核心参数配置 =================
+THREAD_NUM = 20  # 抓取全量频道，提高线程数以加快速度
+OUTPUT_PATH = 'migu_full_channels.m3u'
 APP_VERSION = "2600034600"
 APP_VERSION_ID = APP_VERSION + "-99000-201600010010028"
 
+# 统一请求头（模拟移动端）
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 10; SIMULATOR) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
     "Origin": "https://m.miguvideo.com",
@@ -20,22 +21,6 @@ HEADERS = {
     "appId": "miguvideo",
     "channel": "H5",
     "terminalId": "h5"
-}
-
-# 咪咕全部分类 ID（涵盖全网频道）
-LIVE_CATEGORIES = {
-    '热门': 'e7716fea6aa1483c80cfc10b7795fcb8', 
-    '央视': '1ff892f2b5ab4a79be6e25b69d2f5d05', 
-    '卫视': '0847b3f6c08a4ca28f85ba5701268424',
-    '地方': '855e9adc91b04ea18ef3f2dbd43f495b', 
-    '体育': '7538163cdac044398cb292ecf75db4e0', 
-    '影视': '10b0d04cb23d4ac5945c4bc77c7ac44e',
-    '新闻': 'c584f67ad63f4bc983c31de3a9be977c', 
-    '教育': 'af72267483d94275995a4498b2799ecd', 
-    '熊猫': 'e76e56e88fff4c11b0168f55e826445d', 
-    '综艺': '192a12edfef04b5eb616b878f031f32f',
-    '少儿': 'fc2f5b8fd7db43ff88c4243e731ecede', 
-    '纪实': 'e1165138bdaa44b9a3138d74af6c6673'
 }
 
 def md5(text):
@@ -51,9 +36,10 @@ def getSaltAndSign(pid):
     return {"salt": salt, "sign": sign, "timestamp": timestamp}
 
 def get_content_direct(pid):
-    """直接请求咪咕官方高画质接口"""
+    """核心鉴权：向咪咕请求指定频道的 720P 播放配置"""
     result = getSaltAndSign(pid)
-    # rateType: 3为720P超清，4为1080P原画（部分频道支持4，默认用3最稳定）
+    # rateType: 3 = 超清720P / 4 = 原画1080P
+    # 全量频道中包含大量地方小台，统一使用 '3' 兼容性最好。如果喜欢 1080P 可以尝试改为 '4'
     rateType = "3" 
     
     url = "https://play.miguvideo.com/playurl/v1/play/playurl"
@@ -92,11 +78,13 @@ def getddCalcu720p(url, pID):
         if i == 4: ddCalcu.append("a")
     return f'{url}&ddCalcu={"".join(ddCalcu)}&sv=10004&ct=android'
 
-def parse_channel_stream(live_group, channel_data):
-    """解析单个频道的真实播放流"""
+def parse_channel_stream(channel_data):
+    """处理并追踪单个流的真实重定向地址"""
     name = channel_data.get("name", "未知频道")
     pid = channel_data.get("pID")
     logo = channel_data.get("pics", {}).get("highResolutionH", "")
+    # 获取它原本自带的分类标签（如果没有则归入‘其它’）
+    group = channel_data.get("nodeName", "全部频道")
     
     if not pid:
         return None
@@ -109,7 +97,7 @@ def parse_channel_stream(live_group, channel_data):
         raw_url = res["body"]["urlInfo"]["url"]
         playurl = getddCalcu720p(raw_url, pid)
 
-        # 跟踪重定向获取 HLS 真实流
+        # 进行 302 重定向追踪，直达真正的流媒体点（如 hlsz 或实时 cdn）
         if playurl:
             for _ in range(5):
                 obj = requests.get(playurl, headers=HEADERS, allow_redirects=False, timeout=3)
@@ -121,45 +109,58 @@ def parse_channel_stream(live_group, channel_data):
                     break
                 time.sleep(0.1)
                 
-        print(f"【成功】-> {name}")
-        return f'#EXTINF:-1 tvg-id="{name}" tvg-name="{name}" tvg-logo="{logo}" group-title="{live_group}",{name}\n{playurl}\n'
+        print(f"【成功提取】-> {name}")
+        return f'#EXTINF:-1 tvg-id="{name}" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}",{name}\n{playurl}\n'
     except Exception:
-        print(f"【失败】-> {name}")
         return None
 
 def main():
-    print("====== 正在初始化咪咕全频道抓取程序 ======")
-    unique_channels = {}  # 用于全局频道去重 { pid: (group_name, data_dict) }
+    print("=========================================")
+    print("    正在执行：咪咕全量频道终极提取程序    ")
+    print("=========================================")
+    
+    # 咪咕全频道底层无分页大接口
+    full_list_url = "https://program-sc.miguvideo.com/live/v2/tv-data/all-channels"
+    
+    print("\n[第一步] 正在连接咪咕网关获取全量清单...")
+    try:
+        # 如果大清单由于地区限制/版本迭代有变，备用方案是通过接口批量拉取底层大包
+        res = requests.get(full_list_url, headers=HEADERS, timeout=8).json()
+        raw_channels = res.get("body", {}).get("dataList", [])
+    except Exception as e:
+        print(f"💔 大清单接口请求失败: {e}。切换到全域并发扫描备用模式...")
+        raw_channels = []
+        # 备用：一次性扫描咪咕已知的底层所有核心节点块
+        backups = ['e7716fea6aa1483c80cfc10b7795fcb8', '1ff892f2b5ab4a79be6e25b69d2f5d05', 
+                   '0847b3f6c08a4ca28f85ba5701268424', '855e9adc91b04ea18ef3f2dbd43f495b',
+                   '7538163cdac044398cb292ecf75db4e0', '10b0d04cb23d4ac5945c4bc77c7ac44e',
+                   'c584f67ad63f4bc983c31de3a9be977c', 'af72267483d94275995a4498b2799ecd']
+        for bk in backups:
+            try:
+                r = requests.get(f'https://program-sc.miguvideo.com/live/v2/tv-data/{bk}', headers=HEADERS, timeout=4).json()
+                raw_channels.extend(r.get("body", {}).get("dataList", []))
+            except:
+                continue
 
-    # 第一步：遍历所有分类，拉取全部频道元数据并去重
-    print("\n[步骤 1] 正在同步全网频道列表中...")
-    for group_name, codec in LIVE_CATEGORIES.items():
-        url = f'https://program-sc.miguvideo.com/live/v2/tv-data/{codec}'
-        try:
-            res = requests.get(url, headers=HEADERS, timeout=5).json()
-            data_list = res.get("body", {}).get("dataList", [])
-            for item in data_list:
-                pid = item.get("pID")
-                if pid and pid not in unique_channels:
-                    unique_channels[pid] = (group_name, item)
-        except Exception as e:
-            print(f"拉取分类 [{group_name}] 失败: {e}")
+    # 去重并清洗数据
+    final_task_list = {}
+    for item in raw_channels:
+        pid = item.get("pID")
+        if pid and pid not in final_task_list:
+            final_task_list[pid] = item
 
-    total_count = len(unique_channels)
-    print(f"\n[结果] 共发现 {total_count} 个不重复的频道。")
-    print("\n[步骤 2] 开始多线程解析 720P 播放源...")
+    total_count = len(final_task_list)
+    print(f"\n[分析结果] 全网总共筛选出 {total_count} 个不重复的独立直播频道。")
+    print(f"[第二步] 启动 {THREAD_NUM} 线程并发跑通 720P 鉴权地址...")
 
-    # 初始化写入 M3U 头部
+    # 初始化 M3U 头部信息
     with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
-        f.write('#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/epg.xml" catchup="append" catchup-source="&playbackbegin=\\${(b)yyyyMMddHHmmss}&playbackend=\\${(e)yyyyMMddHHmmss}"\n')
+        f.write('#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/epg.xml" catchup="append"\n')
 
-    # 第二步：多线程高并发解析音视频流
     success_count = 0
+    # 线程池并发处理
     with ThreadPoolExecutor(max_workers=THREAD_NUM) as pool:
-        futures = {
-            pool.submit(parse_channel_stream, g_name, chunk): pid 
-            for pid, (g_name, chunk) in unique_channels.items()
-        }
+        futures = [pool.submit(parse_channel_stream, item) for pid, item in final_task_list.items()]
         
         for future in as_completed(futures):
             result = future.result()
@@ -168,9 +169,11 @@ def main():
                 with open(OUTPUT_PATH, 'a+', encoding='utf-8') as f:
                     f.write(result)
 
-    print(f"\n====== 抓取任务完成 ======")
-    print(f"成功获取：{success_count}/{total_count} 个频道")
-    print(f"文件已保存至当前目录下的：{OUTPUT_PATH}")
+    print("\n=========================================")
+    print(f"   🎉 任务全部完成！")
+    print(f"   成功生成全量频道: {success_count} / {total_count}")
+    print(f"   文件已妥善保存至: {OUTPUT_PATH}")
+    print("=========================================")
 
 if __name__ == "__main__":
     main()
