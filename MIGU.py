@@ -3,10 +3,11 @@ import json
 import time
 import random
 import hashlib
+import traceback
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-thread_mum = 10  # 线程
+thread_mum = 5  # 降低线程数便于调试
 headers = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
@@ -79,10 +80,9 @@ def getSaltAndSign(pid):
 
 def get_content(pid):
     result = getSaltAndSign(pid)
-    rateType = "3"  # 统一使用3（720p）
+    rateType = "3"
     URL = f"https://play.miguvideo.com/playurl/v1/play/playurl?sign={result['sign']}&rateType={rateType}&contId={pid}&timestamp={result['timestamp']}&salt={result['salt']}"
     
-    # 使用精简请求头，避免被拦截
     req_headers = {
         "User-Agent": headers["User-Agent"],
         "Accept": "application/json",
@@ -97,7 +97,7 @@ def get_content(pid):
         if resp.status_code == 200:
             return resp.json()
         else:
-            print(f"get_content 状态码异常: {resp.status_code}")
+            print(f"get_content 状态码异常: {resp.status_code}, 响应: {resp.text[:200]}")
             return None
     except Exception as e:
         print(f"get_content 请求异常: {e}")
@@ -105,63 +105,52 @@ def get_content(pid):
 
 
 def getddCalcu720p(url, pID):
-    """
-    修复版：正确生成 ddCalcu 参数
-    """
     try:
-        # 提取 puData
         if "&puData=" not in url:
             return url
         parts = url.split("&puData=")
         base = parts[0]
         puData_part = parts[1]
-        # puData 可能还包含其他参数，只取 & 之前的部分
         if "&" in puData_part:
             puData = puData_part.split("&")[0]
         else:
             puData = puData_part
-        
         if not puData:
             return url
         
         keys = "cdabyzwxkl"
         ddCalcu = []
         length = len(puData)
-        # 按照原 JS 逻辑：遍历前 length/2 次，每次取对称位置的两个字符
         for i in range(length // 2):
-            # 取对称的两个字符（从外向内）
             ddCalcu.append(puData[length - 1 - i])
             ddCalcu.append(puData[i])
             if i == 1:
                 ddCalcu.append("v")
             if i == 2:
-                # 取日期第3个字符（索引2）
                 day_char = format_date_ymd()[2]
                 index = int(day_char) % len(keys)
                 ddCalcu.append(keys[index])
             if i == 3:
-                # 取 pID 的第7个字符（索引6）
-                pid_char = pID[6] if len(pID) > 6 else "0"
+                if len(pID) > 6:
+                    pid_char = pID[6]
+                else:
+                    pid_char = "0"
                 index = int(pid_char) % len(keys)
                 ddCalcu.append(keys[index])
             if i == 4:
                 ddCalcu.append("a")
-        
-        # 重新组装 URL
         new_url = f"{base}&ddCalcu={''.join(ddCalcu)}&sv=10004&ct=android"
-        # 如果原 URL 中 puData 后面还有其它参数，需要保留
         if "&" in parts[1]:
             remaining = "&" + parts[1].split("&", 1)[1]
             new_url += remaining
         return new_url
     except Exception as e:
-        print(f"getddCalcu720p 错误: {e}")
+        print(f"getddCalcu720p 错误: {e}\n{traceback.format_exc()}")
         return url
 
 
 def append_All_Live(live, flag, data):
     try:
-        # 获取正确的 contId
         pID = data.get("contId") or data.get("pID")
         if not pID:
             print(f'频道 [{data.get("name", "未知")}] 无 contId，跳过')
@@ -169,7 +158,7 @@ def append_All_Live(live, flag, data):
         
         respData = get_content(pID)
         if not respData or "body" not in respData or "urlInfo" not in respData["body"]:
-            print(f'频道 [{data["name"]}] 获取 playurl 失败')
+            print(f'频道 [{data["name"]}] 获取 playurl 失败，respData={respData}')
             return
         
         raw_url = respData["body"]["urlInfo"]["url"]
@@ -177,18 +166,19 @@ def append_All_Live(live, flag, data):
             print(f'频道 [{data["name"]}] 返回的 url 为空')
             return
         
-        # 生成带 ddCalcu 的地址
         playurl = getddCalcu720p(raw_url, pID)
+        print(f"调试: {data['name']} 原始URL: {raw_url[:100]}")
+        print(f"调试: 处理后URL: {playurl[:100]}")
         
-        # 重定向解析，直到拿到真实 m3u8
         final_url = None
         for attempt in range(6):
             try:
                 resp = requests.get(playurl, headers=headers, allow_redirects=False, timeout=10)
+                print(f"重定向尝试 {attempt+1}: 状态码={resp.status_code}")
                 if resp.status_code in (301, 302):
                     location = resp.headers.get("Location")
                     if location:
-                        # 如果已经是 m3u8 或者 hls 地址，直接使用
+                        print(f"  重定向到: {location[:100]}")
                         if location.endswith('.m3u8') or 'hls' in location:
                             final_url = location
                             break
@@ -196,12 +186,11 @@ def append_All_Live(live, flag, data):
                             playurl = location
                             continue
                 else:
-                    # 非重定向响应，检查内容是否为 m3u8
                     if resp.status_code == 200 and '#EXTM3U' in resp.text:
                         final_url = playurl
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  请求异常: {e}")
             time.sleep(0.15)
         
         if final_url:
@@ -212,7 +201,7 @@ def append_All_Live(live, flag, data):
         else:
             print(f'频道 [{data["name"]}] 重定向解析失败')
     except Exception as e:
-        print(f'频道 [{data["name"]}] 更新异常: {e}')
+        print(f'频道 [{data["name"]}] 更新异常: {e}\n{traceback.format_exc()}')
 
 
 def update(live, url):
@@ -223,16 +212,15 @@ def update(live, url):
         data = response.json()
         dataList = data.get("body", {}).get("dataList", [])
         if not dataList:
-            print(f"分类 [{live}] 无频道数据")
+            print(f"分类 [{live}] 无频道数据，响应内容: {data}")
             return
-        # 预扩展列表
         All_Live.extend([""] * len(dataList))
         for idx, ch in enumerate(dataList):
             pool.submit(append_All_Live, live, FLAG + idx, ch)
         pool.shutdown(wait=True)
         FLAG += len(dataList)
     except Exception as e:
-        print(f"分类 [{live}] 更新失败: {e}")
+        print(f"分类 [{live}] 更新失败: {e}\n{traceback.format_exc()}")
         pool.shutdown(wait=False)
 
 
