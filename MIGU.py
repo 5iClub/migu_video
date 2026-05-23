@@ -434,7 +434,7 @@ def update(live, url):
 
 def main():
     writefile(path,
-              '#EXTM3U x-tvg-url="https://itv.5iclub.dpdns.org/epg.xml" catchup="append" catchup-source="&playbackbegin=\${(b)yyyyMMddHHmmss}&playbackend=\${(e)yyyyMMddHHmmss}"\n')
+              '#EXTM3U x-tvg-url="https://itv.ifanr.pp.ua/erw.xml.gz" catchup="append" catchup-source="&playbackbegin=\${(b)yyyyMMddHHmmss}&playbackend=\${(e)yyyyMMddHHmmss}"\n')
 
     for live in lives:
         print(f"分类 ----- [{live}] ----- 开始更新. . .")
