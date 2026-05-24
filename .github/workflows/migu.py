@@ -348,27 +348,11 @@ def update(live, url):
 
 # ====================== 主函数 ======================
 def main():
-    # 1. 构建 M3U 头部和温馨提示频道
+    # 1. 构建 M3U 头部（无温馨提示）
     m3u_content = (
         '#EXTM3U x-tvg-url="https://itv.sspai.pp.ua/erw.xml.gz" catchup="append" '
         'catchup-source="?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}"\n'
     )
-
-    tip_channels = [
-        ("温馨提示", "https://icloud.ifanr.pp.ua/温馨提示.mp4",
-         "https://logo.jsdelivr.dpdns.org/tv/温馨提示.png"),
-        ("谨防诈骗", "https://icloud.ifanr.pp.ua/温馨提示.mp4",
-         "https://logo.jsdelivr.dpdns.org/tv/谨防诈骗.png"),
-        ("禁止蕉绿", "https://icloud.ifanr.pp.ua/温馨提示.mp4",
-         "https://logo.jsdelivr.dpdns.org/tv/禁止蕉绿.png"),
-        ("Cloudflare TV", "https://cloudflare.tv/hls/live.m3u8",
-         "https://logo.jsdelivr.dpdns.org/tv/CloudflareTV.png"),
-    ]
-    for name, stream_url, logo in tip_channels:
-        m3u_content += (
-            f'#EXTINF:-1 tvg-id="{name}" tvg-name="{name}" '
-            f'tvg-logo="{logo}" group-title="🦧温馨提示",{name}\n{stream_url}\n'
-        )
 
     # 2. 抓取所有咪咕直播频道
     for live in lives:
@@ -386,13 +370,8 @@ def main():
     writefile("MiGu.m3u", m3u_content)
     print("\n✨ MiGu.m3u 生成完毕")
 
-    # 4. 生成 TXT 格式（分类列表）
+    # 4. 生成 TXT 格式（分类列表，无温馨提示）
     txt_lines = []
-    # 添加温馨提示分类
-    txt_lines.append("🦧温馨提示,#genre#")
-    for name, stream_url, _ in tip_channels:
-        txt_lines.append(f"{name},{stream_url}")
-
     current_group = ""
     for line in All_Live:
         if not line:
