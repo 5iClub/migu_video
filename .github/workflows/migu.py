@@ -360,7 +360,7 @@ def update(live, url):
 def main():
     # 1. 构建 M3U 头部（去除温馨提示频道）
     m3u_content = (
-        '#EXTM3U x-tvg-url="https://itv.sspai.pp.ua/erw.xml.gz" catchup="append" '
+        '#EXTM3U x-tvg-url="https://itv.ifanr.pp.ua/erw.xml.gz" catchup="append" '
         'catchup-source="?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}"\n'
     )
 
