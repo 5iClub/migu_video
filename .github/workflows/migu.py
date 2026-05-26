@@ -55,7 +55,7 @@ LIVE = {
 
 All_Live = []   # 存储所有频道的 M3U 行
 FLAG = 0        # 当前写入索引
-print_lock = threading.Lock()  # 用于保护 print 输出，避免混乱
+print_lock = threading.Lock()  # 保护控制台输出
 
 # ====================== 辅助函数 ======================
 def format_date_ymd():
@@ -248,7 +248,6 @@ def getddCalcu720p(url, pID):
             if i == 2:
                 ddCalcu.append(keys[int(format_date_ymd()[2])])
             if i == 3:
-                # 安全获取 pID[6]，若无法转 int 则用默认值 0
                 try:
                     idx = int(pID[6]) if len(pID) > 6 else 0
                 except ValueError:
@@ -258,7 +257,6 @@ def getddCalcu720p(url, pID):
                 ddCalcu.append("a")
         return f"{url}&ddCalcu={''.join(ddCalcu)}&sv=10004&ct=android"
     except Exception:
-        # 任何解析错误都返回原链接
         return url
 
 
@@ -291,23 +289,19 @@ def append_All_Live(live, flag, data):
                 obj = requests.get(playurl, allow_redirects=False, timeout=10)
                 location = obj.headers.get("Location", "")
                 if location:
-                    # 处理相对路径 Location
                     if not location.startswith(('http://', 'https://')):
                         location = urljoin(playurl, location)
                     playurl = location
-                    # 如果已经得到了 hlsz 域名或 m3u8 文件，提前结束
                     if "hlsz" in location or location.endswith(".m3u8"):
                         success = True
                         break
                 else:
-                    # 没有 Location 头，检查状态码和 Content-Type
                     if obj.status_code == 200:
                         content_type = obj.headers.get("Content-Type", "")
                         if "mpegurl" in content_type or ".m3u8" in playurl:
                             success = True
                             break
                         else:
-                            # 可能是最终内容但不是 m3u8，按失败处理
                             raise Exception("最终响应不是 m3u8 内容")
                     else:
                         raise Exception(f"HTTP {obj.status_code}")
@@ -329,7 +323,6 @@ def append_All_Live(live, flag, data):
     except Exception as e:
         with print_lock:
             print(f'❌ 频道 [{channel_name}] 更新失败: {type(e).__name__}: {e}')
-        # 失败时留空，不写入内容
 
 
 def update(live, url):
@@ -347,12 +340,10 @@ def update(live, url):
             print(f"❌ 分类 [{live}] 获取频道列表失败: {e}")
         return
 
-    # 预先扩展 All_Live 列表
     start_idx = FLAG
     for _ in dataList:
         All_Live.append("")
 
-    # 使用线程池处理，并等待所有完成
     with ThreadPoolExecutor(max_workers=thread_num) as executor:
         futures = []
         for idx, data in enumerate(dataList):
@@ -371,13 +362,11 @@ def update(live, url):
 
 # ====================== 主函数 ======================
 def main():
-    # 1. 构建 M3U 头部
     m3u_content = (
         '#EXTM3U x-tvg-url="https://itv.ifanr.pp.ua/erw.xml.gz" catchup="append" '
         'catchup-source="?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}"\n'
     )
 
-    # 2. 抓取所有咪咕直播频道
     for live in lives:
         category_id = LIVE.get(live)
         if not category_id:
@@ -386,14 +375,12 @@ def main():
         url = f"https://program-sc.miguvideo.com/live/v2/tv-data/{category_id}"
         update(live, url)
 
-    # 3. 拼接完整 M3U 内容并写入文件
     for line in All_Live:
         if line:
             m3u_content += line
     writefile("MiGu.m3u", m3u_content)
     print("\n✨ MiGu.m3u 生成完毕")
 
-    # 4. 生成 TXT 格式（分类列表）
     txt_lines = []
     current_group = ""
     for line in All_Live:
