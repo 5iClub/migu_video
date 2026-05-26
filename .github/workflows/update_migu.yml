@@ -44,7 +44,7 @@ jobs:
         git config --local user.name "github-actions[bot]"
         
         # 先拉取远程最新代码（使用 rebase 避免产生 merge 提交）
-        git pull origin main --rebase
+        git pull origin main --rebase --autostash
         
         git add MiGu.m3u MiGu.txt README.md
         
