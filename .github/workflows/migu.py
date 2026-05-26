@@ -3,8 +3,10 @@ import json
 import time
 import random
 import hashlib
+import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urljoin
 
 # ====================== 配置参数 ======================
 thread_num = 10                # 线程数
@@ -53,7 +55,7 @@ LIVE = {
 
 All_Live = []   # 存储所有频道的 M3U 行
 FLAG = 0        # 当前写入索引
-
+print_lock = threading.Lock()  # 用于保护 print 输出，避免混乱
 
 # ====================== 辅助函数 ======================
 def format_date_ymd():
@@ -86,7 +88,6 @@ def getSaltAndSign(pid):
 
 def get_content(pid):
     """通过 Apipost 代理获取播放地址（保留原始可用方式）"""
-    # Apipost 代理专用请求头（保持原样）
     _headers = {
         "accept": "application/json, text/plain, */*",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
@@ -118,7 +119,6 @@ def get_content(pid):
            f"&timestamp={result['timestamp']}&salt={result['salt']}")
     params = URL.split("?")[1].split("&")
 
-    # 构建 Apipost 代理请求体（与原代码完全相同）
     body = {
         "option": {
             "scene": "http_request",
@@ -216,13 +216,11 @@ def get_content(pid):
     body_json = json.dumps(body, separators=(",", ":"))
     proxy_url = "https://workspace.apipost.net/proxy/v2/http"
 
-    # 增加重试机制
     for retry in range(3):
         try:
             resp = requests.post(proxy_url, headers=_headers, data=body_json, timeout=30)
             resp.raise_for_status()
             result = resp.json()
-            # 解析 Apipost 返回的数据结构
             response_body = json.loads(result["data"]["data"]["response"]["body"])
             return response_body
         except Exception as e:
@@ -233,7 +231,7 @@ def get_content(pid):
 
 def getddCalcu720p(url, pID):
     """
-    计算 ddCalcu 参数（修复：若缺少 puData 则直接返回原链接）
+    计算 ddCalcu 参数（修复：若缺少 puData 或解析失败则直接返回原链接）
     """
     if not url or "&puData=" not in url:
         return url
@@ -250,8 +248,11 @@ def getddCalcu720p(url, pID):
             if i == 2:
                 ddCalcu.append(keys[int(format_date_ymd()[2])])
             if i == 3:
-                # 防止 pID 长度不足导致索引越界
-                idx = int(pID[6]) if len(pID) > 6 else 0
+                # 安全获取 pID[6]，若无法转 int 则用默认值 0
+                try:
+                    idx = int(pID[6]) if len(pID) > 6 else 0
+                except ValueError:
+                    idx = 0
                 ddCalcu.append(keys[idx % len(keys)])
             if i == 4:
                 ddCalcu.append("a")
@@ -262,10 +263,9 @@ def getddCalcu720p(url, pID):
 
 
 def append_All_Live(live, flag, data):
-    """单个频道的处理线程函数（修复重定向循环和 urlInfo 空值）"""
+    """单个频道的处理线程函数（修复重定向循环）"""
     global All_Live
     channel_name = data.get("name", "未知频道")
-    # 初始化状态变量
     success = False
     playurl = ""
 
@@ -284,24 +284,32 @@ def append_All_Live(live, flag, data):
         # 2. 添加 ddCalcu 参数
         playurl = getddCalcu720p(playurl, data["pID"])
 
-        # 3. 重定向获取真实 hlsz 地址（修复：正确更新 playurl 以跟随重定向）
+        # 3. 重定向获取真实 hlsz 地址（增强版：支持相对路径、识别 m3u8 内容）
         max_redirects = 6
         for attempt in range(max_redirects):
             try:
                 obj = requests.get(playurl, allow_redirects=False, timeout=10)
                 location = obj.headers.get("Location", "")
                 if location:
-                    playurl = location  # 更新为重定向地址
-                    if location.startswith("http://hlsz"):
+                    # 处理相对路径 Location
+                    if not location.startswith(('http://', 'https://')):
+                        location = urljoin(playurl, location)
+                    playurl = location
+                    # 如果已经得到了 hlsz 域名或 m3u8 文件，提前结束
+                    if "hlsz" in location or location.endswith(".m3u8"):
                         success = True
                         break
                 else:
-                    # 没有 Location 头，检查状态码
+                    # 没有 Location 头，检查状态码和 Content-Type
                     if obj.status_code == 200:
-                        success = True
-                        break
+                        content_type = obj.headers.get("Content-Type", "")
+                        if "mpegurl" in content_type or ".m3u8" in playurl:
+                            success = True
+                            break
+                        else:
+                            # 可能是最终内容但不是 m3u8，按失败处理
+                            raise Exception("最终响应不是 m3u8 内容")
                     else:
-                        # 非重定向状态码且无 Location，视为失败
                         raise Exception(f"HTTP {obj.status_code}")
             except requests.RequestException as e:
                 if attempt == max_redirects - 1:
@@ -309,30 +317,34 @@ def append_All_Live(live, flag, data):
             time.sleep(0.15)
 
         if not success:
-            raise Exception("未能获取到有效的 hlsz 地址或最终可播放地址")
+            raise Exception("未能获取到有效的 m3u8 地址")
 
         # 4. 组装 M3U 行
         logo = data.get("pics", {}).get("highResolutionH", "")
         line = (f'#EXTINF:-1 tvg-id="{channel_name}" tvg-name="{channel_name}" '
                 f'tvg-logo="{logo}" group-title="{live}",{channel_name}\n{playurl}\n')
         All_Live[flag] = line
-        print(f'✅ 频道 [{channel_name}] 更新成功')
+        with print_lock:
+            print(f'✅ 频道 [{channel_name}] 更新成功')
     except Exception as e:
-        print(f'❌ 频道 [{channel_name}] 更新失败: {type(e).__name__}: {e}')
+        with print_lock:
+            print(f'❌ 频道 [{channel_name}] 更新失败: {type(e).__name__}: {e}')
         # 失败时留空，不写入内容
 
 
 def update(live, url):
     """处理一个分类下的所有频道"""
     global FLAG, All_Live
-    print(f"\n📺 分类 【{live}】 开始更新...")
+    with print_lock:
+        print(f"\n📺 分类 【{live}】 开始更新...")
 
     try:
         resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
         dataList = resp.json()["body"]["dataList"]
     except Exception as e:
-        print(f"❌ 分类 [{live}] 获取频道列表失败: {e}")
+        with print_lock:
+            print(f"❌ 分类 [{live}] 获取频道列表失败: {e}")
         return
 
     # 预先扩展 All_Live 列表
@@ -345,20 +357,21 @@ def update(live, url):
         futures = []
         for idx, data in enumerate(dataList):
             futures.append(executor.submit(append_All_Live, live, start_idx + idx, data))
-        # 等待所有任务完成
         for future in as_completed(futures):
             try:
                 future.result()
             except Exception as e:
-                print(f"线程任务异常: {e}")
+                with print_lock:
+                    print(f"线程任务异常: {e}")
 
     FLAG += len(dataList)
-    print(f"📺 分类 【{live}】 处理完毕，共 {len(dataList)} 个频道")
+    with print_lock:
+        print(f"📺 分类 【{live}】 处理完毕，共 {len(dataList)} 个频道")
 
 
 # ====================== 主函数 ======================
 def main():
-    # 1. 构建 M3U 头部（去除温馨提示频道）
+    # 1. 构建 M3U 头部
     m3u_content = (
         '#EXTM3U x-tvg-url="https://itv.ifanr.pp.ua/erw.xml.gz" catchup="append" '
         'catchup-source="?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}"\n'
@@ -380,13 +393,12 @@ def main():
     writefile("MiGu.m3u", m3u_content)
     print("\n✨ MiGu.m3u 生成完毕")
 
-    # 4. 生成 TXT 格式（分类列表，不包含温馨提示）
+    # 4. 生成 TXT 格式（分类列表）
     txt_lines = []
     current_group = ""
     for line in All_Live:
         if not line:
             continue
-        # 每一条有效记录包含两行：EXTINF 行和 URL 行
         lines = [l.strip() for l in line.strip().split('\n') if l.strip()]
         for i in range(0, len(lines), 2):
             if i + 1 >= len(lines):
@@ -401,7 +413,8 @@ def main():
                     txt_lines.append(f"{current_group},#genre#")
                 txt_lines.append(f"{name},{url_line}")
             except Exception as e:
-                print(f"[TXT转换警告] 解析失败: {e}")
+                with print_lock:
+                    print(f"[TXT转换警告] 解析失败: {e}")
 
     writefile("MiGu.txt", "\n".join(txt_lines) + "\n")
     print("✨ MiGu.txt 生成完毕")
